@@ -96,7 +96,7 @@ def main() -> int:
         target = HERMES_HOME / "skills" / name / "SKILL.md"
         print(f"Radar skill {name}: {target} ({'exists' if target.exists() else 'missing'})")
     print(f"Radar MCP config: {status}")
-    print(f"Radar Web: {check_radar(args.base_url)}")
+    print(f"Radar API: {check_radar(args.base_url)}")
     print("Hermes command: hermes --skills radar-data-collection")
     print("If Hermes is already running, reload MCP inside Hermes with: /reload-mcp")
     return 0

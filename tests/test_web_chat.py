@@ -1,8 +1,12 @@
 import unittest
+import json
 import sqlite3
+import threading
 from pathlib import Path
+from http.server import ThreadingHTTPServer
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from urllib.request import urlopen
 
 from crawler.db import init_db, save_fetch_result, upsert_accounts
 from crawler.models import ContentItem, FetchResult, SourceAccount
@@ -30,6 +34,31 @@ def sample_account() -> SourceAccount:
 
 
 class WebChatTests(unittest.TestCase):
+    def test_root_is_api_metadata_not_web_ui(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+
+            class TestHandler(RadarAdminHandler):
+                pass
+
+            TestHandler.db_path = db_path
+            server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=5) as response:
+                    content_type = response.headers.get("Content-Type", "")
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+            self.assertIn("application/json", content_type)
+            self.assertEqual(payload["service"], "radar-api")
+            self.assertEqual(payload["entrypoint"], "ai-agent")
+            self.assertNotIn("html", json.dumps(payload).lower())
+
     def test_chrome_session_prompt_sets_mode(self):
         task = parse_chat_prompt("使用 chrome-session 抓取 @elonmusk 最近7天原创推文，下载图片和视频，不要转发")
         self.assertEqual(task["platform"], "x")

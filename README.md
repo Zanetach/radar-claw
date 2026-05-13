@@ -2,7 +2,7 @@
 
 Radar Claw is the data-collection tool layer for Qianfeng AI / Hermes Agent workflows.
 
-The product entry is the AI Agent, not Radar itself. Radar runs behind the Agent: it receives tool calls, creates collection tasks, calls feedgrab-backed platform providers, stores raw content and media metadata, and returns structured execution results to the AI employee.
+The product entry is the AI Agent. Radar runs behind the Agent: it receives tool calls, creates collection tasks, calls feedgrab-backed platform providers, stores raw content and media metadata, and returns structured execution results to the AI employee.
 
 ## Current Scope
 
@@ -19,7 +19,7 @@ Radar Claw is focused on the collection layer:
 
 Translation, OCR, summarization, classification, and publishing are optional downstream capabilities. They can run in the same AI employee or in separate employees, but Radar remains the source of truth for raw collected data.
 
-Radar is not a user-facing workspace. Any local web surface in this repository is an internal API/debug/admin console for development and operations. End users should interact through Qianfeng/Hermes AI employees.
+Radar does not ship a standalone user interface. End users interact through Qianfeng/Hermes AI employees; Radar exposes HTTP APIs and MCP tools for those employees.
 
 ## Architecture
 
@@ -37,7 +37,6 @@ User
 ## Key Directories
 
 - `crawler/` - Python backend, database, providers, feedgrab adapter, local storage helpers.
-- `web/` - internal local debug/admin console built with native HTML/CSS/JS; not the product entry.
 - `tools/radar_mcp_server.py` - Hermes MCP server exposing Radar tools.
 - `tools/hermes_skills/` - Hermes skill definitions.
 - `docs/` - PRD, workflow, and setup documentation.
@@ -46,13 +45,13 @@ User
 
 ## Local Setup
 
-Create or reuse the Radar virtual environment and start the local Radar API/debug service:
+Create or reuse the Radar virtual environment and start the local Radar API service:
 
 ```bash
-./tools/run_radar_web.sh
+./tools/run_radar_api.sh
 ```
 
-Default local internal URL:
+Default local API URL:
 
 ```text
 http://127.0.0.1:8780
@@ -110,12 +109,6 @@ Run backend tests:
 
 ```bash
 python3 -m unittest discover -s tests -v
-```
-
-Check frontend JavaScript syntax:
-
-```bash
-node --check web/app.js
 ```
 
 ## Security

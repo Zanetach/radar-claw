@@ -4,7 +4,7 @@ This repository is the Radar data-collection tool for Qianfeng AI / Hermes Agent
 
 ## Project Overview
 
-Radar provides a data-collection MCP toolset. The product entry is the AI Agent, not Radar Web. AI employees use Hermes tools to create collection tasks, fetch external content through feedgrab providers, store raw data and media metadata, and optionally hand selected raw content to downstream organization workflows.
+Radar provides a data-collection MCP toolset. The product entry is the AI Agent. AI employees use Hermes tools to create collection tasks, fetch external content through feedgrab providers, store raw data and media metadata, and optionally hand selected raw content to downstream organization workflows.
 
 The current first-stage product boundary is data collection:
 
@@ -17,15 +17,14 @@ The current first-stage product boundary is data collection:
 
 Content organization, translation, OCR, analysis, and publishing are optional downstream capabilities. They can be handled by the same AI employee or by separate employees, but Radar must remain the shared source of truth.
 
-Do not describe Radar Web as a user-facing workspace or ask end users to open it to complete normal workflows. The local web surface is only an internal API/debug/admin console for developers and operators.
+Do not add or describe a standalone Radar user interface. Normal workflows must happen through the AI Agent calling Radar tools.
 
 ## Important Paths
 
 - `crawler/` - Python backend, providers, database, feedgrab adapter, local Feishu/Markdown helpers.
-- `crawler/web.py` - local HTTP API and internal debug/admin backend.
+- `crawler/web.py` - local HTTP API backend used by MCP tools.
 - `crawler/providers.py` - X/API/RSS/XMCP/browser provider routing.
 - `crawler/feedgrab_adapter/` - adapter from feedgrab unified output to Radar content items.
-- `web/` - native HTML/CSS/JS internal debug/admin console; not the user entry.
 - `tools/radar_mcp_server.py` - Hermes MCP server exposing Radar tools.
 - `tools/hermes_skills/` - Hermes skill definitions copied to `~/.hermes/skills`.
 - `docs/` - product, workflow, and deployment documentation.
@@ -35,13 +34,13 @@ Do not describe Radar Web as a user-facing workspace or ask end users to open it
 
 ## Local Runtime
 
-Start the local Radar API/debug service:
+Start the local Radar API service:
 
 ```bash
-./tools/run_radar_web.sh
+./tools/run_radar_api.sh
 ```
 
-Default internal URL:
+Default API URL:
 
 ```text
 http://127.0.0.1:8780
@@ -87,12 +86,6 @@ Run the full backend test suite:
 
 ```bash
 python3 -m unittest discover -s tests -v
-```
-
-Run frontend syntax check:
-
-```bash
-node --check web/app.js
 ```
 
 ## Editing Guidelines

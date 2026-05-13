@@ -3,7 +3,7 @@
 
 This server exposes the local Radar data collection platform as MCP tools.
 It intentionally talks to the existing local HTTP API instead of importing
-the web app internals, so Hermes can use it as a stable integration boundary.
+server internals, so Hermes can use it as a stable integration boundary.
 """
 
 from __future__ import annotations

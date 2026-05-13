@@ -2,7 +2,7 @@
 
 本项目支持两套存储路径：
 
-- 现有本地 SQLite 管理台：用于本地验证和调试。
+- 现有本地 SQLite 与 HTTP API：用于本地验证和调试。
 - Hermes/飞书工作流：以飞书云盘 Markdown 为内容主存储，以飞书多维表为状态索引。
 
 当前代码提供 `LocalFeishuStore`，用 `feishu_workspace/` 模拟飞书云盘和多维表。Hermes 接入真实飞书能力时，只需替换 store adapter；采集、整理、发布可以按需绑定到同一个 AI 员工，也可以拆成多个员工协作。

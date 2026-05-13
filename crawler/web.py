@@ -39,7 +39,6 @@ from .models import FetchResult, utc_now_iso
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WEB_DIR = ROOT / "web"
 MEDIA_DIR = ROOT / DEFAULT_MEDIA_DIR
 EDITABLE_ACCOUNT_FIELDS = {
     "account_handle",
@@ -55,15 +54,6 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict | 
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    handler.wfile.write(body)
-
-
-def text_response(handler: BaseHTTPRequestHandler, status: int, text: str, content_type: str) -> None:
-    body = text.encode("utf-8")
-    handler.send_response(status)
-    handler.send_header("Content-Type", content_type)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
@@ -558,7 +548,13 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/"):
             self.handle_api_get(parsed.path, parse_qs(parsed.query))
             return
-        self.serve_static(parsed.path)
+        if parsed.path.startswith("/data/media/"):
+            self.serve_media(parsed.path)
+            return
+        if parsed.path in {"", "/"}:
+            self.serve_root()
+            return
+        json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
@@ -574,25 +570,18 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             return
         json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
-    def serve_static(self, path: str) -> None:
-        if path.startswith("/data/media/"):
-            self.serve_media(path)
-            return
-        relative = "index.html" if path in {"", "/"} else path.lstrip("/")
-        file_path = (WEB_DIR / relative).resolve()
-        if not str(file_path).startswith(str(WEB_DIR.resolve())) or not file_path.exists() or file_path.is_dir():
-            json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
-            return
-        content_type = mimetypes.guess_type(file_path.name)[0] or "text/plain"
-        if content_type.startswith("text/") or file_path.suffix in {".js", ".css"}:
-            text_response(self, HTTPStatus.OK, file_path.read_text(encoding="utf-8"), content_type)
-            return
-        body = file_path.read_bytes()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def serve_root(self) -> None:
+        json_response(
+            self,
+            HTTPStatus.OK,
+            {
+                "service": "radar-api",
+                "entrypoint": "ai-agent",
+                "mcp_server": "tools/radar_mcp_server.py",
+                "health": "/api/summary",
+                "diagnostics": "/api/config/diagnostics",
+            },
+        )
 
     def serve_media(self, path: str) -> None:
         relative = path.lstrip("/")

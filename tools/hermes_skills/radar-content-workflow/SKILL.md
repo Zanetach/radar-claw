@@ -11,7 +11,7 @@ Radar is the backend system of record for source accounts, raw collected content
 
 Use the Radar MCP tools instead of editing Radar files directly.
 
-Do not direct end users to Radar Web for normal operation. Radar Web, if running locally, is an internal debug/admin console for developers and operators.
+Do not direct end users to a Radar UI for normal operation. Radar is a tool/API layer used by the AI Agent.
 
 ## Roles
 
