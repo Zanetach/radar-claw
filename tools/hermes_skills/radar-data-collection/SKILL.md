@@ -7,7 +7,7 @@ description: Use when a Hermes or Qianfeng AI employee needs to collect external
 
 ## Boundary
 
-Radar is the data collection tool. feedgrab is the platform collection kernel behind Radar. Organization, translation, OCR, summarization, classification, and quality judgment are optional downstream capabilities. They may be handled by the same AI employee if it has those tools, or by a separate content organization employee.
+Radar is the data collection tool behind the AI employee. The product entry is the Hermes/Qianfeng AI Agent, not Radar Web. feedgrab is the platform collection kernel behind Radar. Organization, translation, OCR, summarization, classification, and quality judgment are optional downstream capabilities. They may be handled by the same AI employee if it has those tools, or by a separate content organization employee.
 
 Use Radar MCP tools. Do not edit Radar files directly.
 
@@ -39,6 +39,7 @@ Use only these tools for this skill:
 - Use browser session only for debugging or low-volume validation.
 - If metrics are unavailable, state that they are unavailable; never fabricate metrics.
 - Do not expose API tokens, cookies, or OAuth secrets.
+- Do not tell end users to open Radar Web for normal operation. Return task summaries, content IDs, source URLs, and export/handoff options through the AI Agent response.
 - When the user asks for organization, translation, OCR, scoring, or classification, generate an organizer handoff with `radar_handoff_to_organizer` instead of starting a new crawl.
 
 ## Typical Flow

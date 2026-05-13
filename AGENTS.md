@@ -4,7 +4,7 @@ This repository is the Radar data-collection tool for Qianfeng AI / Hermes Agent
 
 ## Project Overview
 
-Radar provides a configurable data-collection workspace and MCP toolset. AI employees can use Hermes tools to create collection tasks, fetch external content through feedgrab providers, store raw data and media metadata, and optionally hand selected raw content to downstream organization workflows.
+Radar provides a data-collection MCP toolset. The product entry is the AI Agent, not Radar Web. AI employees use Hermes tools to create collection tasks, fetch external content through feedgrab providers, store raw data and media metadata, and optionally hand selected raw content to downstream organization workflows.
 
 The current first-stage product boundary is data collection:
 
@@ -17,13 +17,15 @@ The current first-stage product boundary is data collection:
 
 Content organization, translation, OCR, analysis, and publishing are optional downstream capabilities. They can be handled by the same AI employee or by separate employees, but Radar must remain the shared source of truth.
 
+Do not describe Radar Web as a user-facing workspace or ask end users to open it to complete normal workflows. The local web surface is only an internal API/debug/admin console for developers and operators.
+
 ## Important Paths
 
 - `crawler/` - Python backend, providers, database, feedgrab adapter, local Feishu/Markdown helpers.
-- `crawler/web.py` - local HTTP API and workspace backend.
+- `crawler/web.py` - local HTTP API and internal debug/admin backend.
 - `crawler/providers.py` - X/API/RSS/XMCP/browser provider routing.
 - `crawler/feedgrab_adapter/` - adapter from feedgrab unified output to Radar content items.
-- `web/` - native HTML/CSS/JS workspace UI.
+- `web/` - native HTML/CSS/JS internal debug/admin console; not the user entry.
 - `tools/radar_mcp_server.py` - Hermes MCP server exposing Radar tools.
 - `tools/hermes_skills/` - Hermes skill definitions copied to `~/.hermes/skills`.
 - `docs/` - product, workflow, and deployment documentation.
@@ -33,13 +35,13 @@ Content organization, translation, OCR, analysis, and publishing are optional do
 
 ## Local Runtime
 
-Start the local web app:
+Start the local Radar API/debug service:
 
 ```bash
 ./tools/run_radar_web.sh
 ```
 
-Default URL:
+Default internal URL:
 
 ```text
 http://127.0.0.1:8780

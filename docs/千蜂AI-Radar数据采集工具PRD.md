@@ -2,7 +2,7 @@
 
 ## 定位
 
-Radar 是千蜂 AI Agent Runtime 的标准数据采集工具，基于 Hermes Agent 的 MCP + Skill 机制接入。AI 员工选择 Radar 工具后，可以通过对话创建采集任务、查询状态、读取原始数据、导出原始数据集，并按需把采集结果交给后续整理/分析流程。
+Radar 是千蜂 AI Agent Runtime 的标准数据采集工具，基于 Hermes Agent 的 MCP + Skill 机制接入。产品入口是 AI 员工，不是 Radar Web。AI 员工选择 Radar 工具后，可以通过对话创建采集任务、查询状态、读取原始数据、导出原始数据集，并按需把采集结果交给后续整理/分析流程。
 
 feedgrab 使用 `iBigQiang/feedgrab` 作为底层采集内核。所有媒介平台接入、provider 选择、抓取动作和媒体下载由 feedgrab 管理；Radar 负责工具封装、任务管理、数据存储、状态追踪和 Agent 协作契约。
 
@@ -64,7 +64,8 @@ v1 不做：
 - 不在 Radar 内置 LLM 翻译、摘要、分类。
 - 不在 Radar 内置发布链路。
 - 不重写 feedgrab 已支持的平台抓取逻辑。
-- 不在前端展示 token 明文。
+- 不把 Radar Web 作为用户入口；本地 Web 仅用于开发、运维、调试和诊断。
+- 不在任何界面展示 token 明文。
 - 不绕过平台登录、付费、限流或风控。
 
 ## X MCP 规则

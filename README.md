@@ -2,7 +2,7 @@
 
 Radar Claw is the data-collection tool layer for Qianfeng AI / Hermes Agent workflows.
 
-It lets an AI employee receive a natural-language collection request, create a Radar collection task, call feedgrab-backed platform providers, store raw content and media metadata, and return a structured task result to the user.
+The product entry is the AI Agent, not Radar itself. Radar runs behind the Agent: it receives tool calls, creates collection tasks, calls feedgrab-backed platform providers, stores raw content and media metadata, and returns structured execution results to the AI employee.
 
 ## Current Scope
 
@@ -18,6 +18,8 @@ Radar Claw is focused on the collection layer:
 - optional raw-data handoff for downstream organization or analysis
 
 Translation, OCR, summarization, classification, and publishing are optional downstream capabilities. They can run in the same AI employee or in separate employees, but Radar remains the source of truth for raw collected data.
+
+Radar is not a user-facing workspace. Any local web surface in this repository is an internal API/debug/admin console for development and operations. End users should interact through Qianfeng/Hermes AI employees.
 
 ## Architecture
 
@@ -35,7 +37,7 @@ User
 ## Key Directories
 
 - `crawler/` - Python backend, database, providers, feedgrab adapter, local storage helpers.
-- `web/` - local workspace UI built with native HTML/CSS/JS.
+- `web/` - internal local debug/admin console built with native HTML/CSS/JS; not the product entry.
 - `tools/radar_mcp_server.py` - Hermes MCP server exposing Radar tools.
 - `tools/hermes_skills/` - Hermes skill definitions.
 - `docs/` - PRD, workflow, and setup documentation.
@@ -44,13 +46,13 @@ User
 
 ## Local Setup
 
-Create or reuse the Radar virtual environment and start the web app:
+Create or reuse the Radar virtual environment and start the local Radar API/debug service:
 
 ```bash
 ./tools/run_radar_web.sh
 ```
 
-Default local URL:
+Default local internal URL:
 
 ```text
 http://127.0.0.1:8780

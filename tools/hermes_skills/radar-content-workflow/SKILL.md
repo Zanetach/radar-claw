@@ -7,9 +7,11 @@ description: Use when operating the Radar content workflow through Hermes Agent:
 
 ## Operating Boundary
 
-Radar is the system of record for source accounts, raw collected content, media metadata, organized content, publish status, and run reports. Hermes performs intelligent work through Radar MCP tools and must write results back to Radar.
+Radar is the backend system of record for source accounts, raw collected content, media metadata, organized content, publish status, and run reports. The product entry is the Hermes/Qianfeng AI Agent. Hermes performs intelligent work through Radar MCP tools and must write results back to Radar.
 
 Use the Radar MCP tools instead of editing Radar files directly.
+
+Do not direct end users to Radar Web for normal operation. Radar Web, if running locally, is an internal debug/admin console for developers and operators.
 
 ## Roles
 

@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hermes 数据采集 Agent</title>
+    <title>Radar 采集工具内部控制台</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
-        <h1>Radar Agent 工作台</h1>
-        <p>Hermes 深度集成的采集、整理、发布流水线</p>
+        <h1>Radar 采集工具内部控制台</h1>
+        <p>面向开发与运维的 MCP、provider、任务和数据诊断台；用户入口在 AI Agent</p>
       </div>
       <div class="statusbar" id="statusBar"></div>
     </header>
@@ -21,7 +21,7 @@
           <div class="brand-bot" aria-hidden="true">
             <span></span>
           </div>
-          <strong>AI Workspace</strong>
+          <strong>Radar Tool</strong>
         </div>
         <div class="side-section-title">我的 AI 员工</div>
         <div class="side-agent-card">
@@ -31,7 +31,7 @@
             <span>在线</span>
           </div>
         </div>
-        <button class="nav active" data-view="chat" type="button"><span class="nav-icon">对</span>对话框</button>
+        <button class="nav active" data-view="chat" type="button"><span class="nav-icon">测</span>Agent 调试</button>
         <button class="nav" data-view="tasks" type="button"><span class="nav-icon">任</span>员工任务</button>
         <button class="nav" data-view="results" type="button"><span class="nav-icon">数</span>原始数据</button>
         <button class="nav" data-view="publish" type="button"><span class="nav-icon">发</span>发布中心</button>
@@ -93,7 +93,7 @@
           <section class="quick-start">
             <div>
               <h3>开箱即用命令</h3>
-              <p>本地 Radar Web 和 Hermes MCP 已配置后，可以直接在 Hermes 中调用。</p>
+              <p>本地 Radar API / 内部控制台和 Hermes MCP 已配置后，可以直接在 AI Agent 中调用。</p>
             </div>
             <pre>hermes --skills radar-data-collection</pre>
           </section>
@@ -102,8 +102,8 @@
         <section class="panel active conversation-panel workspace-panel" id="chatView">
           <header class="workspace-topbar">
             <div>
-              <h2>Workspace · 统一对话入口</h2>
-              <p>多个 AI 员工在统一 Workspace 中协同工作，用户通过对话发起任务、查看进度与接收结果</p>
+              <h2>Radar · Agent 调试台</h2>
+              <p>用于本地验证 AI Agent 调用 Radar 工具的采集链路；正式入口在千蜂/Hermes AI 员工</p>
             </div>
             <div class="workspace-actions">
               <label class="workspace-search">
@@ -125,7 +125,7 @@
           <section class="workspace-grid">
             <section class="dialog-panel">
               <div class="panel-title-row">
-                <h3>统一对话框</h3>
+                <h3>Agent 调试对话框</h3>
                 <button class="ghost-action" type="button">+ 添加员工</button>
               </div>
 
@@ -163,8 +163,8 @@
               </div>
 
               <div class="chat-hero sr-context">
-                <h3 id="agentHeroTitle">Workspace 统一对话入口</h3>
-                <p id="agentHeroSubtitle">通过对话发布采集、整理和发布任务。</p>
+                <h3 id="agentHeroTitle">Radar 工具调用调试</h3>
+                <p id="agentHeroSubtitle">模拟 AI Agent 调用 Radar；正式用户对话发生在 AI Agent 中。</p>
               </div>
 
               <div id="chatLog" class="chat-log workspace-chat-log">
