@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.DS_Store
+.env
+tools/xmcp/.env
+.external/
+.chrome-webbridge-profile/
+data/
+feishu_workspace/
+market-weekly-*.html
+weekly-market-report/

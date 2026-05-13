@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hermes 数据采集 Agent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Radar Agent 工作台</h1>
+        <p>Hermes 深度集成的采集、整理、发布流水线</p>
+      </div>
+      <div class="statusbar" id="statusBar"></div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="side-brand">
+          <div class="brand-bot" aria-hidden="true">
+            <span></span>
+          </div>
+          <strong>AI Workspace</strong>
+        </div>
+        <div class="side-section-title">我的 AI 员工</div>
+        <div class="side-agent-card">
+          <div class="mini-bot" aria-hidden="true"></div>
+          <div>
+            <strong>小艾</strong>
+            <span>在线</span>
+          </div>
+        </div>
+        <button class="nav active" data-view="chat" type="button"><span class="nav-icon">对</span>对话框</button>
+        <button class="nav" data-view="tasks" type="button"><span class="nav-icon">任</span>员工任务</button>
+        <button class="nav" data-view="results" type="button"><span class="nav-icon">数</span>原始数据</button>
+        <button class="nav" data-view="publish" type="button"><span class="nav-icon">发</span>发布中心</button>
+        <button class="nav" data-view="media" type="button"><span class="nav-icon">媒</span>媒体库</button>
+        <button class="nav" data-view="settings" type="button"><span class="nav-icon">设</span>系统设置</button>
+        <div class="side-user">
+          <span class="nav-icon">管</span>
+          <div>
+            <strong>管理员维护</strong>
+            <span>配置不在工作台展示</span>
+          </div>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <section class="summary-grid" id="summaryGrid"></section>
+
+        <section class="panel" id="overviewView">
+          <section class="launch-hero">
+            <div class="launch-copy">
+              <span class="eyebrow">Hermes Ready</span>
+              <h2>一句话发布员工任务，三类 Agent 自动接力</h2>
+              <p>前置只需要配置 X MCP / Token / Hermes MCP。后续从采集、筛选、整理到定向发布，都通过同一个状态流完成。</p>
+              <div class="hero-actions">
+                <button type="button" data-jump-view="chat">打开 Agent Chat</button>
+                <button class="secondary" type="button" data-jump-view="settings">检查配置</button>
+              </div>
+            </div>
+            <div class="readiness-card">
+              <div class="readiness-head">
+                <strong>系统就绪度</strong>
+                <span id="readinessScore">检测中</span>
+              </div>
+              <div id="setupChecklist" class="setup-checklist"></div>
+            </div>
+          </section>
+
+          <section class="workflow-board">
+            <article class="workflow-card">
+              <div class="step-index">1</div>
+              <h3>采集 Agent</h3>
+              <p>从 X MCP、账号源或 Excel 生成原始数据，保留原文链接、图片和视频元数据。</p>
+              <button type="button" data-agent-jump="crawler">发布员工任务</button>
+            </article>
+            <article class="workflow-card">
+              <div class="step-index">2</div>
+              <h3>整理 Agent</h3>
+              <p>只读取已采集原始数据，生成质量建议、中文整理、OCR、分类和归档内容。</p>
+              <button type="button" data-agent-jump="organizer">整理原始数据</button>
+            </article>
+            <article class="workflow-card">
+              <div class="step-index">3</div>
+              <h3>发布 Agent</h3>
+              <p>只读取整理库和待发布队列，按雷达号 APP、小红书或自定义渠道定向发布。</p>
+              <button type="button" data-agent-jump="publisher">发布整理稿</button>
+            </article>
+          </section>
+
+          <section class="quick-start">
+            <div>
+              <h3>开箱即用命令</h3>
+              <p>本地 Radar Web 和 Hermes MCP 已配置后，可以直接在 Hermes 中调用。</p>
+            </div>
+            <pre>hermes --skills radar-data-collection</pre>
+          </section>
+        </section>
+
+        <section class="panel active conversation-panel workspace-panel" id="chatView">
+          <header class="workspace-topbar">
+            <div>
+              <h2>Workspace · 统一对话入口</h2>
+              <p>多个 AI 员工在统一 Workspace 中协同工作，用户通过对话发起任务、查看进度与接收结果</p>
+            </div>
+            <div class="workspace-actions">
+              <label class="workspace-search">
+                <span>搜</span>
+                <input type="search" placeholder="搜索 AI 员工、任务或内容..." />
+              </label>
+              <button class="icon-action" type="button" aria-label="主题">☼</button>
+              <button class="icon-action notify" type="button" aria-label="通知"><span>6</span>铃</button>
+              <div class="workspace-user">
+                <div class="user-avatar" aria-hidden="true"></div>
+                <div>
+                  <strong>业务用户</strong>
+                  <span>市场分析部</span>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <section class="workspace-grid">
+            <section class="dialog-panel">
+              <div class="panel-title-row">
+                <h3>统一对话框</h3>
+                <button class="ghost-action" type="button">+ 添加员工</button>
+              </div>
+
+              <div class="dialog-agent-tabs agent-switch">
+                <button class="agent-tab active" type="button" data-agent="crawler">
+                  <span class="agent-avatar bot"></span>
+                  <strong>小艾 · 数据采集</strong>
+                  <em></em>
+                </button>
+                <button class="agent-tab" type="button" data-agent="organizer">
+                  <span class="agent-avatar bee"></span>
+                  <strong>小蜂 · 内容整理</strong>
+                  <em></em>
+                </button>
+                <button class="agent-tab" type="button" data-agent="publisher">
+                  <span class="agent-avatar owl"></span>
+                  <strong>小智 · 内容发布</strong>
+                  <em></em>
+                </button>
+              </div>
+
+              <div class="workspace-rule-strip">
+                <span id="ruleReviewLabel">已启用 <strong id="activeRuleCount">5</strong> 条采集规则</span>
+                <button id="toggleRulePanelBtn" type="button">查看规则</button>
+              </div>
+              <div id="rulePanel" class="rule-panel workspace-rules">
+                <button class="rule-chip active" type="button" data-rule-text="只保留原创内容，不要转发，不要回复">原创优先</button>
+                <button class="rule-chip active" type="button" data-rule-text="下载图片和视频">下载图片/视频</button>
+                <button class="rule-chip active" type="button" data-rule-text="最近7天">最近 7 天</button>
+                <button class="rule-chip active" type="button" data-rule-text="需要翻译成中文">翻译中文</button>
+                <button class="rule-chip active" type="button" data-rule-text="图片 OCR">图片 OCR</button>
+                <button class="rule-chip" type="button" data-rule-text="只保留带媒体的内容">仅带媒体</button>
+                <button class="rule-chip" type="button" data-rule-text="每天上午10点定时执行">每天定时</button>
+                <button class="rule-chip" type="button" data-rule-text="保留引用推文">保留引用</button>
+              </div>
+
+              <div class="chat-hero sr-context">
+                <h3 id="agentHeroTitle">Workspace 统一对话入口</h3>
+                <p id="agentHeroSubtitle">通过对话发布采集、整理和发布任务。</p>
+              </div>
+
+              <div id="chatLog" class="chat-log workspace-chat-log">
+                <div class="chat-message user demo-message">
+                  <p>帮我采集小红书和 X 上关于 AI 工具的热门内容，并生成分析报告</p>
+                  <span>10:21 ✓✓</span>
+                </div>
+                <div class="chat-message assistant">
+                  <span class="agent-avatar bot"></span>
+                  <div>
+                    <strong id="agentHelpTitle">小艾 · 数据采集</strong>
+                    <small>10:21</small>
+                    <p id="agentHelpText">已创建员工任务，正在识别平台、关键词和采集范围。</p>
+                  </div>
+                </div>
+                <div class="chat-message assistant">
+                  <span class="agent-avatar bee"></span>
+                  <div>
+                    <strong>小蜂 · 内容整理</strong>
+                    <small>10:22</small>
+                    <p>我会在采集完成后做翻译、去重、质量建议和归档。</p>
+                  </div>
+                </div>
+                <div class="chat-message assistant">
+                  <span class="agent-avatar owl"></span>
+                  <div>
+                    <strong>小智 · 内容发布</strong>
+                    <small>10:22</small>
+                    <p>整理通过后，我会按目标渠道生成发布 payload 并回写发布状态。</p>
+                  </div>
+                </div>
+              </div>
+
+              <form id="agentChatForm" class="chat-form workspace-chat-form">
+                <div class="chat-input-head">
+                  <button class="agent-picker" type="button">选择 AI 员工</button>
+                  <label class="strategy-picker">
+                    <span>采集策略</span>
+                    <select id="chatStrategySelect"></select>
+                  </label>
+                  <span id="attachmentStatus" class="toolbar-context">数据采集</span>
+                </div>
+                <textarea name="message" rows="2" placeholder="输入任务，例如：帮我采集竞品发布会近 7 天讨论..."></textarea>
+                <div class="chat-toolbar">
+                  <div class="toolbar-left">
+                    <label class="attach-button">
+                      <input id="chatFileInput" type="file" accept=".xlsx,.txt,.md,.csv" />
+                      附件
+                    </label>
+                  </div>
+                  <button id="agentSubmitBtn" type="submit" aria-label="发送">发送</button>
+                </div>
+              </form>
+
+              <div id="promptSuggestions" class="prompt-suggestions workspace-suggestions">
+                <button type="button" data-prompt="抓取 @OpenAI 最近7天原创推文，下载图片和视频，不要转发，需要翻译和图片OCR">采集 @OpenAI 最近 7 天</button>
+                <button type="button" data-prompt="导入客户 Excel，解析里面的账号，按 X 平台批量采集最近7天内容，只保留原创和带媒体内容">导入 Excel 生成任务</button>
+                <button type="button" data-prompt="整理最近采集的20条原始数据，给质量评分和发布建议，翻译中文，图片OCR">整理最近原始数据</button>
+              </div>
+            </section>
+
+            <aside class="collab-panel report-panel">
+              <div class="panel-title-row">
+                <h3>协同任务面板</h3>
+                <button id="refreshBtn" class="refresh-action" type="button">↻</button>
+              </div>
+              <div class="task-kpis">
+                <article class="blue">
+                  <span>进行中</span>
+                  <strong>3</strong>
+                </article>
+                <article class="amber">
+                  <span>待确认</span>
+                  <strong>2</strong>
+                </article>
+                <article class="green">
+                  <span>已完成</span>
+                  <strong>12</strong>
+                </article>
+              </div>
+
+              <section class="current-task-card">
+                <div class="current-task-head">
+                  <span class="agent-avatar bot"></span>
+                  <div>
+                    <strong>Radarclaw 员工任务 · <em>60%</em></strong>
+                    <div class="progress-line"><span></span></div>
+                    <p>创建时间：2025-05-19 10:20:31</p>
+                  </div>
+                </div>
+                <div class="task-flow" id="reportProgressSteps">
+                  <div class="task-flow-step done"><span></span><strong>平台识别</strong><small>已完成</small></div>
+                  <div class="task-flow-step active"><span></span><strong>采集执行</strong><small>进行中</small></div>
+                  <div class="task-flow-step"><span></span><strong>报告生成</strong><small>待开始</small></div>
+                </div>
+              </section>
+
+              <section class="recent-tasks">
+                <div class="list-title">
+                  <h4>最近任务</h4>
+                  <button type="button" data-jump-view="tasks">查看全部 ›</button>
+                </div>
+                <article>
+                  <span class="source-badge red">小红书</span>
+                  <strong>小红书 AI 工具热门内容采集</strong>
+                  <em>进行中</em>
+                  <time>10:20</time>
+                </article>
+                <article>
+                  <span class="source-badge black">X</span>
+                  <strong>X 平台 AI 工具讨论采集</strong>
+                  <em>进行中</em>
+                  <time>10:20</time>
+                </article>
+                <article>
+                  <span class="source-badge purple">报</span>
+                  <strong>AI 工具热门内容分析报告</strong>
+                  <em class="pending">待确认</em>
+                  <time>10:15</time>
+                </article>
+              </section>
+
+              <div class="report-data-hidden" aria-hidden="true">
+                <strong id="reportContentCount">0</strong>
+                <strong id="reportInteractionCount">0</strong>
+                <strong id="reportTopicCount">0</strong>
+                <span id="conversationStatusDot"></span>
+                <span id="conversationStatusText">任务进行中</span>
+                <div id="reportTopicList"></div>
+              </div>
+            </aside>
+          </section>
+
+          <section class="agent-work-area">
+            <h3>AI 员工协作区</h3>
+            <div class="agent-work-grid">
+              <article class="agent-work-card blue">
+                <span class="agent-avatar bot"></span>
+                <div>
+                  <strong>小艾 · 数据采集</strong>
+                  <small>在线</small>
+                  <p>专注数据采集与获取</p>
+                </div>
+                <button type="button">Radarclaw</button>
+                <button type="button">平台识别</button>
+                <button type="button">采集执行</button>
+              </article>
+              <article class="agent-work-card amber">
+                <span class="agent-avatar bee"></span>
+                <div>
+                  <strong>小蜂 · 内容整理</strong>
+                  <small>在线</small>
+                  <p>负责翻译、去重、质量判断与归档</p>
+                </div>
+                <button type="button">质量建议</button>
+                <button type="button">翻译 OCR</button>
+                <button type="button">归档入库</button>
+              </article>
+              <article class="agent-work-card green">
+                <span class="agent-avatar owl"></span>
+                <div>
+                  <strong>小智 · 内容发布</strong>
+                  <small>在线</small>
+                  <p>负责渠道选择、发布预览与状态回写</p>
+                </div>
+                <button type="button">雷达号 APP</button>
+                <button type="button">小红书草稿</button>
+                <button type="button">发布回写</button>
+              </article>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel" id="tasksView">
+          <div class="panel-header">
+            <div>
+              <h2>员工任务</h2>
+              <p>只展示运行中任务、定时任务和历史执行记录。</p>
+            </div>
+            <button id="reloadRunsBtn" type="button">更新任务</button>
+          </div>
+          <section class="run-section">
+            <div class="section-title">
+              <h3>最近任务</h3>
+              <span class="muted">运行中 / 已定时 / 历史任务</span>
+            </div>
+            <div id="runList" class="run-list"></div>
+            <pre id="runResult" class="result-box"></pre>
+          </section>
+        </section>
+
+        <section class="panel" id="sourcesView">
+          <div class="panel-header">
+            <div>
+              <h2>数据源</h2>
+              <p>账号源、分类、Handle 和最近采集状态。</p>
+            </div>
+            <div class="filters">
+              <select id="accountPlatformFilter">
+                <option value="">全部平台</option>
+                <option value="x">X</option>
+                <option value="youtube">YouTube</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="instagram">Instagram</option>
+              </select>
+              <select id="accountStatusFilter">
+                <option value="">全部状态</option>
+                <option value="enabled">启用</option>
+                <option value="disabled">停用</option>
+                <option value="issue">有数据问题</option>
+              </select>
+              <input id="accountSearch" type="search" placeholder="搜索账号 / 雷达号" />
+            </div>
+          </div>
+          <div class="bulk-bar">
+            <button id="enableSelectedBtn" type="button">批量启用</button>
+            <button id="disableSelectedBtn" type="button">批量停用</button>
+            <span id="selectedCount">已选 0 个</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th><input id="selectAllAccounts" type="checkbox" /></th>
+                  <th>平台</th>
+                  <th>分类</th>
+                  <th>账号</th>
+                  <th>Handle / URL</th>
+                  <th>门槛</th>
+                  <th>最近状态</th>
+                  <th>启用</th>
+                </tr>
+              </thead>
+              <tbody id="accountsTable"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" id="resultsView">
+          <div class="panel-header">
+            <div>
+              <h2>原始数据</h2>
+              <p>采集后的原始内容，可选择后交给整理 Agent。</p>
+            </div>
+            <div class="filters">
+              <button id="organizeSelectedBtn" type="button">整理已选原始数据</button>
+              <button id="organizeVisibleBtn" type="button">整理当前筛选</button>
+              <button id="exportSelectedJsonlBtn" type="button">导出已选 JSONL</button>
+              <button id="exportVisibleMarkdownBtn" type="button">导出当前 Markdown</button>
+              <select id="contentPlatformFilter">
+                <option value="">全部平台</option>
+                <option value="x">X</option>
+                <option value="youtube">YouTube</option>
+                <option value="linkedin">LinkedIn</option>
+                <option value="instagram">Instagram</option>
+              </select>
+              <select id="contentStatusFilter">
+                <option value="">全部结果</option>
+                <option value="qualified">达标</option>
+                <option value="metrics_pending">指标待补</option>
+                <option value="below_threshold">未达标</option>
+              </select>
+              <select id="contentMediaFilter">
+                <option value="">全部内容</option>
+                <option value="1">仅带媒体</option>
+              </select>
+            </div>
+          </div>
+          <div id="contentList" class="content-list"></div>
+        </section>
+
+        <section class="panel" id="organizedView">
+          <div class="panel-header">
+            <div>
+              <h2>整理库</h2>
+              <p>整理 Agent 生成的中文稿、摘要和发布建议，可选择后交给发布 Agent。</p>
+            </div>
+            <div class="filters">
+              <button id="publishSelectedOrganizedBtn" type="button">发布已选整理稿</button>
+              <button id="loadOrganizedBtn" type="button">刷新整理库</button>
+            </div>
+          </div>
+          <div id="organizedList" class="content-list"></div>
+        </section>
+
+        <section class="panel" id="publishView">
+          <div class="panel-header">
+            <div>
+              <h2>发布中心</h2>
+              <p>审核通过且待发布的内容，可发布到雷达号、小红书或自定义渠道。</p>
+            </div>
+            <div class="filters">
+              <input id="targetChannelInput" value="雷达号 APP" />
+              <button id="publishSelectedBtn" type="button">发布已选</button>
+              <button id="publishVisibleBtn" type="button">发布当前待发布列表</button>
+            </div>
+          </div>
+          <div id="publishList" class="content-list"></div>
+        </section>
+
+        <section class="panel" id="mediaView">
+          <div class="panel-header">
+            <div>
+              <h2>媒体库</h2>
+              <p>已解析和已下载的图片、视频、预览图和下载状态。</p>
+            </div>
+            <div class="filters">
+              <select id="mediaPlatformFilter">
+                <option value="">全部平台</option>
+                <option value="x">X</option>
+                <option value="youtube">YouTube</option>
+                <option value="instagram">Instagram</option>
+                <option value="linkedin">LinkedIn</option>
+              </select>
+              <select id="mediaTypeFilter">
+                <option value="">全部媒体</option>
+                <option value="image">图片</option>
+                <option value="video">视频</option>
+              </select>
+              <input id="mediaAccountSearch" type="search" placeholder="搜索账号" />
+            </div>
+          </div>
+          <div id="mediaGrid" class="asset-grid"></div>
+        </section>
+
+        <section class="panel" id="settingsView">
+          <div class="panel-header">
+            <div>
+              <h2>系统设置</h2>
+              <p>管理数据源、整理库、后台接入与异常记录。</p>
+            </div>
+            <button id="diagnosticsBtn" type="button">一键诊断</button>
+          </div>
+          <section class="settings-module-grid">
+            <article>
+              <span class="settings-module-icon">源</span>
+              <div>
+                <strong>数据源管理</strong>
+                <p>账号源、分类、Handle 和最近采集状态。</p>
+              </div>
+              <button type="button" data-jump-view="sources">进入数据源</button>
+            </article>
+            <article>
+              <span class="settings-module-icon">整</span>
+              <div>
+                <strong>整理库管理</strong>
+                <p>查看整理 Agent 生成的中文稿、摘要和发布建议。</p>
+              </div>
+              <button type="button" data-jump-view="organized">进入整理库</button>
+            </article>
+            <article>
+              <span class="settings-module-icon">策</span>
+              <div>
+                <strong>采集策略</strong>
+                <p>平台、模式、时间范围、媒体、翻译和 OCR 的组合规则。</p>
+              </div>
+              <button type="button" data-jump-view="settings">管理策略</button>
+            </article>
+            <article>
+              <span class="settings-module-icon">接</span>
+              <div>
+                <strong>后台接入维护</strong>
+                <p>MCP、Token、媒体目录、飞书镜像和异常诊断。</p>
+              </div>
+              <button type="button" id="settingsDiagnosticsShortcut">执行诊断</button>
+            </article>
+          </section>
+          <section class="strategy-section">
+            <div class="section-title">
+              <h3>采集策略</h3>
+              <span class="muted">Chat 和 Hermes MCP 会复用这些策略</span>
+            </div>
+            <div id="strategyList" class="strategy-list"></div>
+          </section>
+          <form id="xmcpConfigForm" class="settings-form">
+            <div class="form-section-title">
+              <h3>X MCP 接入配置</h3>
+              <p>保存后写入本地 .env，并同步到 .external/xmcp/.env；密钥不会在界面回显。</p>
+            </div>
+            <label>
+              MCP 服务地址
+              <input name="XMCP_SERVER_URL" placeholder="http://127.0.0.1:8000/mcp" />
+            </label>
+            <label>
+              X Bearer Token
+              <input name="X_BEARER_TOKEN" type="password" autocomplete="off" placeholder="留空表示不修改已有 token" />
+            </label>
+            <label>
+              X API Key
+              <input name="X_API_KEY" type="password" autocomplete="off" placeholder="留空表示不修改已有 key" />
+            </label>
+            <label>
+              X API Secret
+              <input name="X_API_SECRET" type="password" autocomplete="off" placeholder="留空表示不修改已有 secret" />
+            </label>
+            <button type="submit">保存 MCP 配置</button>
+          </form>
+          <div class="settings-grid" id="diagnosticsGrid"></div>
+          <div class="settings-grid" id="tokenGrid"></div>
+          <section class="failure-section">
+            <div class="section-title">
+              <h3>异常记录</h3>
+              <button id="reloadFailuresBtn" type="button">刷新异常</button>
+            </div>
+            <div class="table-wrap compact">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>平台</th>
+                    <th>账号</th>
+                    <th>类型</th>
+                    <th>说明</th>
+                  </tr>
+                </thead>
+                <tbody id="failuresTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <aside id="detailDrawer" class="drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div>
+          <h2 id="drawerTitle">内容详情</h2>
+          <p id="drawerMeta"></p>
+        </div>
+        <button id="closeDrawerBtn" type="button">关闭</button>
+      </div>
+      <div id="drawerBody" class="drawer-body"></div>
+    </aside>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
