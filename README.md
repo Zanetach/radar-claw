@@ -21,6 +21,15 @@ Translation, OCR, summarization, classification, and publishing are optional dow
 
 Radar does not ship a standalone user interface. End users interact through Qianfeng/Hermes AI employees; Radar exposes HTTP APIs and MCP tools for those employees.
 
+## feedgrab Platform Coverage
+
+Radar integrates feedgrab as the platform collection kernel. Current Radar support is:
+
+- Account/search production routes: X/Twitter through `feedgrab:x_mcp`, `feedgrab:x_rss`, API/browser fallbacks; XHS keyword search through feedgrab.
+- URL/content routes through feedgrab: XHS, WeChat official account articles, YouTube, Bilibili, Douyin, Weibo, Zhihu, GitHub, Feishu, Kdocs, Youdao, RSS, Telegram, Reddit, HackerNews, Medium, LinuxDo, IDCFlare, Xiaoyuzhou, Ximalaya, and generic Web URLs.
+
+For URL/content routes, the AI employee can pass a source URL to `radar_agent_collect` or `radar_create_collection_task`; Radar identifies the platform, calls feedgrab, stores raw text, source URL, metadata, media asset metadata, and the raw payload. Account-level and keyword-level deep crawling is enabled platform by platform.
+
 ## Architecture
 
 ```text

@@ -4,21 +4,7 @@ from hashlib import sha256
 from typing import Any
 
 from crawler.models import ContentItem
-
-
-SOURCE_PLATFORM_MAP = {
-    "facebook": "facebook",
-    "fb": "facebook",
-    "twitter": "x",
-    "x": "x",
-    "youtube": "youtube",
-    "xhs": "xhs",
-    "xiaohongshu": "xhs",
-    "wechat": "wechat",
-    "rss": "rss",
-    "github": "github",
-    "web": "web",
-}
+from .platforms import normalize_feedgrab_platform
 
 
 def _value(content: Any, key: str, default: Any = None) -> Any:
@@ -110,7 +96,7 @@ def unified_content_to_item(content: Any) -> ContentItem:
         }
     extra = data.get("extra") or {}
     source_type = _enum_value(data.get("source_type"))
-    platform = SOURCE_PLATFORM_MAP.get(source_type, source_type or "web")
+    platform = normalize_feedgrab_platform(source_type) or source_type or "web"
     title = data.get("title")
     text = data.get("content") or data.get("text") or ""
     url = data.get("url") or ""

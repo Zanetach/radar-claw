@@ -6,6 +6,8 @@ import urllib.error
 import urllib.request
 from typing import Any
 
+from .platforms import feedgrab_url_provider_catalog
+
 
 def _installed_version(package: str) -> str | None:
     try:
@@ -28,7 +30,7 @@ def _http_probe(url: str) -> dict[str, Any]:
 
 def provider_catalog() -> list[dict[str, Any]]:
     """Return Radar's feedgrab-facing provider catalog."""
-    return [
+    x_providers = [
         {
             "platform": "x",
             "provider": "feedgrab:x_mcp",
@@ -57,21 +59,8 @@ def provider_catalog() -> list[dict[str, Any]]:
             "capabilities": ["account_posts", "visible_media"],
             "requires": ["Chrome login session"],
         },
-        {
-            "platform": "youtube",
-            "provider": "feedgrab:youtube",
-            "priority": 80,
-            "capabilities": ["url_read", "search", "transcript", "media_metadata"],
-            "requires": [],
-        },
-        {
-            "platform": "web",
-            "provider": "feedgrab:universal_reader",
-            "priority": 70,
-            "capabilities": ["url_read", "markdown", "metadata"],
-            "requires": [],
-        },
     ]
+    return x_providers + feedgrab_url_provider_catalog()
 
 
 def feedgrab_health() -> dict[str, Any]:

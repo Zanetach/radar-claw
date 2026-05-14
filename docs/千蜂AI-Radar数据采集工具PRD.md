@@ -53,6 +53,7 @@ v1 做：
 
 - feedgrab 依赖接入。
 - X MCP 作为 feedgrab X provider 的生产默认路径。
+- feedgrab URL/content 路由：小红书、微信公众号、YouTube、Bilibili、抖音、微博、知乎、GitHub、飞书、金山文档、有道云笔记、RSS、Telegram、Reddit、HackerNews、Medium、LinuxDo、IDCFlare、小宇宙、喜马拉雅、通用 Web URL。
 - collection task / raw content / provider health / optional organizer handoff API。
 - `crawl_run_contents` 精确记录任务产出内容，避免并发任务用时间窗口误关联。
 - 原始数据集导出，支持 JSON、JSONL、Markdown，供同一 AI 员工或其他 Agent 消费。
@@ -64,6 +65,7 @@ v1 不做：
 - 不在 Radar 内置 LLM 翻译、摘要、分类。
 - 不在 Radar 内置发布链路。
 - 不重写 feedgrab 已支持的平台抓取逻辑。
+- 不一次性承诺所有平台的账号级/关键词级深度采集；v1 先保证 URL/content 采集闭环，账号/搜索路由按平台逐步增强。
 - 不提供独立用户界面；Radar 只提供 HTTP API、MCP tools、Skill 和采集执行能力。
 - 不在任何界面展示 token 明文。
 - 不绕过平台登录、付费、限流或风控。

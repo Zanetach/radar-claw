@@ -36,6 +36,8 @@ Use only these tools for this skill:
 - Prefer named strategies from `radar_list_strategies`.
 - For X production, prefer `feedgrab:x_mcp`.
 - Use `feedgrab:x_rss` or `no-token` as the free fallback when X API/XMCP is unavailable or credits are insufficient. It can accept normal `@handle` or profile URL input.
+- For non-X platforms, prefer URL/content collection through feedgrab first: XHS, WeChat, YouTube, Bilibili, Douyin, Weibo, Zhihu, GitHub, Feishu, Kdocs, Youdao, RSS, Telegram, Reddit, HackerNews, Medium, LinuxDo, IDCFlare, Xiaoyuzhou, Ximalaya, and generic Web URLs.
+- If a non-X task only provides an account name or keyword and Radar has no dedicated provider for that platform yet, ask for a URL or create a structured task that clearly reports the provider limitation.
 - Use browser session only for debugging or low-volume validation.
 - If metrics are unavailable, state that they are unavailable; never fabricate metrics.
 - Do not expose API tokens, cookies, or OAuth secrets.

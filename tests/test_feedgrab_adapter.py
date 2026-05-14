@@ -39,6 +39,36 @@ class FeedgrabAdapterTests(unittest.TestCase):
         providers = provider_catalog()
         self.assertTrue(any(item["provider"] == "feedgrab:x_mcp" for item in providers))
 
+    def test_provider_catalog_lists_feedgrab_url_platforms(self):
+        providers = provider_catalog()
+        platforms = {item["platform"] for item in providers if str(item["provider"]).startswith("feedgrab:")}
+
+        self.assertTrue(
+            {
+                "xhs",
+                "wechat",
+                "youtube",
+                "bilibili",
+                "douyin",
+                "weibo",
+                "zhihu",
+                "github",
+                "feishu",
+                "kdocs",
+                "youdao",
+                "rss",
+                "telegram",
+                "reddit",
+                "hackernews",
+                "medium",
+                "linuxdo",
+                "idcflare",
+                "xiaoyuzhou",
+                "ximalaya",
+                "web",
+            }.issubset(platforms)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

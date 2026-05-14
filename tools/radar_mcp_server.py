@@ -116,6 +116,11 @@ def radar_create_collection_task(
 ) -> dict[str, Any]:
     """Create a Radar collection task backed by feedgrab providers.
 
+    For URL/content collection, pass url. Radar will route supported feedgrab
+    platforms such as XHS, WeChat, YouTube, Bilibili, Douyin, Weibo, Zhihu,
+    GitHub, Feishu, Kdocs, Youdao, RSS, Telegram, Reddit, HackerNews, Medium,
+    LinuxDo, IDCFlare, Xiaoyuzhou, Ximalaya, and generic Web URLs.
+
     The response includes agent_feedback. AI employees should use
     agent_feedback.message as the user-facing result and agent_feedback.next_actions
     for export or content organizer handoff.

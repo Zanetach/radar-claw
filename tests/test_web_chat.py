@@ -11,7 +11,7 @@ from urllib.request import urlopen
 from crawler.db import init_db, save_fetch_result, upsert_accounts
 from crawler.models import ContentItem, FetchResult, SourceAccount
 from crawler.providers import ProviderError
-from crawler.web import RadarAdminHandler, parse_chat_prompt
+from crawler.web import RadarAdminHandler, infer_platform_from_url, parse_chat_prompt
 from tests.test_providers import XGO_RSS
 
 
@@ -84,6 +84,31 @@ class WebChatTests(unittest.TestCase):
         self.assertEqual(task["sourceType"], "url")
         self.assertEqual(task["url"], "https://www.facebook.com/openai/posts/123")
         self.assertEqual(task["mode"], "feedgrab")
+
+    def test_feedgrab_platform_url_inference_covers_supported_media(self):
+        cases = {
+            "https://www.bilibili.com/video/BV1xx": "bilibili",
+            "https://v.douyin.com/iabc/": "douyin",
+            "https://mp.weixin.qq.com/s/example": "wechat",
+            "https://m.weibo.cn/status/123": "weibo",
+            "https://www.zhihu.com/question/123/answer/456": "zhihu",
+            "https://github.com/iBigQiang/feedgrab": "github",
+            "https://zane.feishu.cn/docx/example": "feishu",
+            "https://www.kdocs.cn/l/example": "kdocs",
+            "https://note.youdao.com/s/example": "youdao",
+            "https://t.me/example/123": "telegram",
+            "https://www.reddit.com/r/LocalLLaMA/comments/abc/post/": "reddit",
+            "https://news.ycombinator.com/item?id=1": "hackernews",
+            "https://medium.com/@author/post": "medium",
+            "https://linux.do/t/topic/123": "linuxdo",
+            "https://idcflare.com/post/example": "idcflare",
+            "https://www.xiaoyuzhoufm.com/episode/123": "xiaoyuzhou",
+            "https://www.ximalaya.com/sound/123": "ximalaya",
+            "https://example.com/feed.xml": "rss",
+        }
+        for url, platform in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(infer_platform_from_url(url), platform)
 
     def test_xhs_keyword_prompt_creates_keyword_collection_task(self):
         task = parse_chat_prompt("采集小红书上关于 AI 工具 的热门笔记，保留图片")
@@ -214,6 +239,34 @@ class WebChatTests(unittest.TestCase):
             self.assertEqual(row["platform"], "facebook")
             self.assertEqual(row["provider"], "feedgrab:universal_reader")
             self.assertEqual(row["original_text"], "A public Facebook post about AI tools.")
+
+    @patch("crawler.web.read_url")
+    def test_collection_task_bilibili_url_is_saved_as_bilibili_raw_content(self, read_url):
+        read_url.return_value = {
+            "source_type": "web",
+            "source_name": "Bilibili",
+            "title": "AI video",
+            "content": "A Bilibili video about AI.",
+            "url": "https://www.bilibili.com/video/BV1xx",
+            "id": "bv-1",
+            "extra": {"videos": [{"url": "https://example.com/video.mp4"}]},
+        }
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            run = handler.api_create_collection_task({"url": "https://www.bilibili.com/video/BV1xx"})
+
+            self.assertEqual(run["saved_count"], 1)
+            row = conn.execute("SELECT platform, provider, media_type, media_assets_json FROM source_contents").fetchone()
+            self.assertEqual(row["platform"], "bilibili")
+            self.assertEqual(row["provider"], "feedgrab:bilibili")
+            self.assertEqual(row["media_type"], "video")
+            self.assertIn("video.mp4", row["media_assets_json"])
 
     @patch("crawler.web.search_feedgrab_xhs_keyword")
     def test_agent_chat_xhs_keyword_collects_search_results(self, search_xhs_keyword):

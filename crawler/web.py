@@ -33,6 +33,12 @@ from .db import (
 from .import_accounts import load_accounts_from_excel
 from .providers import ProviderError, build_provider, provider_mode_capabilities, webbridge_status
 from .feedgrab_adapter import FeedgrabUnavailable, feedgrab_health, provider_catalog, read_url, unified_content_to_item
+from .feedgrab_adapter.platforms import (
+    feedgrab_provider_for_platform,
+    infer_feedgrab_platform_from_text,
+    infer_feedgrab_platform_from_url,
+    normalize_feedgrab_platform,
+)
 from .x_intel import fetch_bestblogs_accounts, upsert_x_intel_accounts
 from .media_downloader import DEFAULT_MEDIA_DIR, download_fetch_result_media
 from .models import FetchResult, utc_now_iso
@@ -248,22 +254,22 @@ def infer_platform_from_url(url: str) -> str:
         host = host[4:]
     if host in {"x.com", "twitter.com"} or host.endswith(".x.com") or host.endswith(".twitter.com"):
         return "x"
-    if host.endswith("youtube.com") or host == "youtu.be":
-        return "youtube"
+    feedgrab_platform = infer_feedgrab_platform_from_url(url)
+    if feedgrab_platform != "web":
+        return feedgrab_platform
     if host.endswith("instagram.com"):
         return "instagram"
     if host.endswith("linkedin.com"):
         return "linkedin"
-    if host.endswith("xiaohongshu.com") or host.endswith("xhslink.com"):
-        return "xhs"
     if host.endswith("facebook.com") or host.endswith("fb.watch"):
         return "facebook"
-    if url.lower().endswith((".rss", ".xml")):
-        return "rss"
-    return "web"
+    return feedgrab_platform
 
 
 def infer_platform_from_prompt(prompt: str, lower: str, urls: list[str]) -> str:
+    feedgrab_platform = infer_feedgrab_platform_from_text(prompt)
+    if feedgrab_platform:
+        return feedgrab_platform
     if any(token in prompt for token in ["小红书", "红书"]) or "xiaohongshu" in lower or "xhs" in lower:
         return "xhs"
     if "facebook" in lower or re.search(r"\bfb\b", lower):
@@ -1866,13 +1872,27 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         try:
             content = read_url(url)
             item = unified_content_to_item(content)
-            requested_platform = (body.get("platform") or infer_platform_from_url(url) or item.platform).strip().lower()
-            requested_platform = "xhs" if requested_platform == "xiaohongshu" else requested_platform
+            requested_platform = (
+                normalize_feedgrab_platform(body.get("platform"))
+                or infer_platform_from_url(url)
+                or normalize_feedgrab_platform(item.platform)
+                or item.platform
+            ).strip().lower()
             if requested_platform not in {"", "web"} and item.platform != requested_platform:
                 item = replace(
                     item,
                     platform=requested_platform,
                     raw_payload={**item.raw_payload, "requested_platform": requested_platform},
+                )
+            provider_route = feedgrab_provider_for_platform(requested_platform)
+            if provider_route:
+                item = replace(
+                    item,
+                    raw_payload={
+                        **item.raw_payload,
+                        "source": provider_route,
+                        "provider_backend": item.raw_payload.get("source", "feedgrab:universal_reader"),
+                    },
                 )
             category = (body.get("category") or "feedgrab URL").strip() or "feedgrab URL"
             source_name = None
