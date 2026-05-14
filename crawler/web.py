@@ -442,6 +442,31 @@ def parse_chat_prompt(text: str) -> dict:
     return task
 
 
+def non_url_task_requires_source_url(task: dict) -> bool:
+    platform = (task.get("platform") or "").strip().lower()
+    source_type = task.get("sourceType") or ""
+    if source_type == "url":
+        return False
+    if platform == "x":
+        return False
+    if platform == "youtube" and source_type == "account":
+        return False
+    if platform == "xhs" and source_type == "keyword":
+        return False
+    if source_type in {"keyword", "account"}:
+        return True
+    return False
+
+
+def source_url_required_message(task: dict) -> str:
+    platform = task.get("platform") or "该平台"
+    source_type = task.get("sourceType") or "任务"
+    return (
+        f"{platform} 当前只接入 feedgrab URL/content 采集，"
+        f"尚未接入 {source_type} 深度采集。请提供具体内容链接或主页链接后再采集。"
+    )
+
+
 def load_dotenv_file(path: Path) -> None:
     if not path.exists():
         return
@@ -990,10 +1015,12 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         return item
 
     def raw_content_contract_item(self, row: dict) -> dict:
+        raw_payload = safe_json(row.get("raw_payload_json"))
         return {
             "content_id": row["id"],
             "platform": row["platform"],
-            "provider": row.get("provider") or safe_json(row.get("raw_payload_json")).get("source"),
+            "provider": row.get("provider") or raw_payload.get("source"),
+            "execution_backend": raw_payload.get("provider_backend") or raw_payload.get("execution_backend"),
             "source_account": row.get("account_name"),
             "category": row.get("category"),
             "radar_name": row.get("radar_name"),
@@ -1015,7 +1042,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "organize_status": row.get("organize_status"),
             "review_status": row.get("review_status"),
             "publish_status": row.get("publish_status"),
-            "raw_payload": safe_json(row.get("raw_payload_json")),
+            "raw_payload": raw_payload,
         }
 
     def dataset_markdown(self, items: list[dict]) -> str:
@@ -1357,11 +1384,17 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         content_ids = [int(item["id"]) for item in contents if item.get("id") is not None]
         media_count = sum(len(compact_media_assets(item.get("media_assets_json"))) for item in contents)
         provider_values = []
+        backend_values = []
         for item in contents:
-            provider = item.get("provider") or safe_json(item.get("raw_payload_json")).get("source")
+            raw_payload = safe_json(item.get("raw_payload_json"))
+            provider = item.get("provider") or raw_payload.get("source")
             if provider:
                 provider_values.append(provider)
+            backend = raw_payload.get("provider_backend") or raw_payload.get("execution_backend")
+            if backend:
+                backend_values.append(backend)
         providers = sorted(set(provider_values))
+        execution_backends = sorted(set(backend_values))
         errors = [
             detail
             for detail in report.get("details", [])
@@ -1391,12 +1424,14 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         top_contents = []
         for item in contents[:5]:
             media_assets = compact_media_assets(item.get("media_assets_json"))
+            raw_payload = safe_json(item.get("raw_payload_json"))
             top_contents.append(
                 {
                     "content_id": item.get("id"),
                     "title": item.get("title") or (item.get("original_text") or item.get("text") or "")[:80],
                     "source_url": item.get("url"),
-                    "provider": item.get("provider") or safe_json(item.get("raw_payload_json")).get("source"),
+                    "provider": item.get("provider") or raw_payload.get("source"),
+                    "execution_backend": raw_payload.get("provider_backend") or raw_payload.get("execution_backend"),
                     "metrics": {
                         "views": item.get("view_count"),
                         "likes": item.get("like_count"),
@@ -1458,6 +1493,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "media_downloaded": int(run.get("media_downloaded") or 0),
                 "media_failed": media_failed,
                 "providers": providers,
+                "execution_backends": execution_backends,
             },
             "content_ids": content_ids,
             "top_contents": top_contents,
@@ -1885,6 +1921,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                     raw_payload={**item.raw_payload, "requested_platform": requested_platform},
                 )
             provider_route = feedgrab_provider_for_platform(requested_platform)
+            detail_provider = provider_route or "feedgrab:universal_reader"
             if provider_route:
                 item = replace(
                     item,
@@ -1920,7 +1957,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "failures": 0,
                 "media": media_stats,
                 "feishuWritten": 0,
-                "details": [{"url": url, "provider": "feedgrab:universal_reader", "saved": saved, "contentIds": content_ids}],
+                "details": [{"url": url, "provider": detail_provider, "saved": saved, "contentIds": content_ids}],
             }
         except FeedgrabUnavailable as exc:
             log_failure(
@@ -2535,6 +2572,21 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "reply": "已解析为任务草稿，请确认后发布。",
                 "task": task,
                 "run": None,
+            }
+
+        if non_url_task_requires_source_url(task):
+            return {
+                "reply": source_url_required_message(task),
+                "task": task,
+                "run": None,
+                "agent_feedback": {
+                    "audience": "ai_employee",
+                    "status": "requires_input",
+                    "message": source_url_required_message(task),
+                    "required_input": "url",
+                    "platform": task.get("platform"),
+                    "sourceType": task.get("sourceType"),
+                },
             }
 
         conn = self.conn()

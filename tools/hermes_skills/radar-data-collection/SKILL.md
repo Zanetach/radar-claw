@@ -63,6 +63,7 @@ Every collection task response includes `agent_feedback` for the AI employee:
 - `message`: concise user-facing result summary.
 - `content_ids`: raw content IDs produced by the task.
 - `top_contents`: first collected items with source URL, metrics, provider, and media count.
+- `execution_backend`: when present on a content item, this is the underlying feedgrab reader. `provider` is the Radar route.
 - `errors`: failed account/provider details.
 - `next_actions`: ready-to-call tool suggestions such as `radar_export_raw_dataset` and `radar_handoff_to_organizer`.
 - `report_markdown`: Markdown report that can be sent to the user or saved.

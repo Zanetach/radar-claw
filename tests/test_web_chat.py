@@ -117,6 +117,22 @@ class WebChatTests(unittest.TestCase):
         self.assertEqual(task["query"], "AI 工具")
         self.assertEqual(task["mode"], "feedgrab")
 
+    def test_agent_chat_non_x_without_url_requests_url_without_failed_run(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            result = handler.api_agent_chat({"message": "抓取微博上雷军最近 10 条内容", "execute": True})
+
+            self.assertIsNone(result["run"])
+            self.assertEqual(result["task"]["platform"], "weibo")
+            self.assertIn("请提供", result["reply"])
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS count FROM crawl_runs").fetchone()["count"], 0)
+
     def test_save_organized_content_preserves_original_and_writes_translation(self):
         with TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "radar.db"
@@ -262,6 +278,8 @@ class WebChatTests(unittest.TestCase):
             run = handler.api_create_collection_task({"url": "https://www.bilibili.com/video/BV1xx"})
 
             self.assertEqual(run["saved_count"], 1)
+            self.assertEqual(run["agent_feedback"]["top_contents"][0]["provider"], "feedgrab:bilibili")
+            self.assertEqual(run["agent_feedback"]["top_contents"][0]["execution_backend"], "feedgrab:universal_reader")
             row = conn.execute("SELECT platform, provider, media_type, media_assets_json FROM source_contents").fetchone()
             self.assertEqual(row["platform"], "bilibili")
             self.assertEqual(row["provider"], "feedgrab:bilibili")

@@ -30,6 +30,8 @@ Radar integrates feedgrab as the platform collection kernel. Current Radar suppo
 
 For URL/content routes, the AI employee can pass a source URL to `radar_agent_collect` or `radar_create_collection_task`; Radar identifies the platform, calls feedgrab, stores raw text, source URL, metadata, media asset metadata, and the raw payload. Account-level and keyword-level deep crawling is enabled platform by platform.
 
+In task feedback, `provider` is the Radar route such as `feedgrab:github`; `execution_backend` is the underlying reader used by feedgrab, for example `feedgrab:universal_reader`.
+
 ## Architecture
 
 ```text
