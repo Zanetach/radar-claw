@@ -42,6 +42,7 @@ Use only these tools for this skill:
 - If metrics are unavailable, state that they are unavailable; never fabricate metrics.
 - Do not expose API tokens, cookies, or OAuth secrets.
 - Do not tell end users to open a Radar UI for normal operation. Return task summaries, content IDs, source URLs, and export/handoff options through the AI Agent response.
+- When the user asks for scheduled collection, Radar does not create or own the scheduler. Use `agent_feedback.runtime_schedule` to create the schedule in Hermes/Qianfeng Agent runtime. The scheduled job should call `radar_create_collection_task` with the provided `execution_payload`.
 - When the user asks for organization, translation, OCR, scoring, or classification, generate an organizer handoff with `radar_handoff_to_organizer` instead of starting a new crawl.
 
 ## Typical Flow
@@ -51,10 +52,11 @@ Use only these tools for this skill:
 3. Send the user's original instruction to `radar_agent_collect`.
 4. Use `radar_create_collection_task` only when the task is already structured or a system workflow requires explicit fields.
 5. Read `agent_feedback` from the returned task. Use `agent_feedback.message` as the user-facing task result.
-6. Read task status with `radar_get_collection_task` if the task is scheduled or still running.
-7. Inspect results with `radar_list_raw_contents` and `radar_get_raw_content_detail`.
-8. Export selected task output with `radar_export_raw_dataset` when another agent needs a portable JSON/JSONL/Markdown dataset.
-9. If requested, hand selected raw content to an organizer-capable workflow with `radar_handoff_to_organizer`.
+6. If `agent_feedback.status` is `requires_runtime_schedule`, create the schedule in Hermes/Qianfeng Agent runtime. Do not tell the user Radar has created a scheduled job.
+7. Read task status with `radar_get_collection_task` if a collection task is still running.
+8. Inspect results with `radar_list_raw_contents` and `radar_get_raw_content_detail`.
+9. Export selected task output with `radar_export_raw_dataset` when another agent needs a portable JSON/JSONL/Markdown dataset.
+10. If requested, hand selected raw content to an organizer-capable workflow with `radar_handoff_to_organizer`.
 
 ## Task Feedback
 

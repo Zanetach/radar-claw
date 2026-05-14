@@ -32,6 +32,8 @@ For URL/content routes, the AI employee can pass a source URL to `radar_agent_co
 
 In task feedback, `provider` is the Radar route such as `feedgrab:github`; `execution_backend` is the underlying reader used by feedgrab, for example `feedgrab:universal_reader`.
 
+Scheduled collection is owned by the AI Agent runtime, not by Radar. When a user asks for "daily", "every hour", or similar scheduling, Radar returns `agent_feedback.status=requires_runtime_schedule` with a `runtime_schedule` payload. Hermes/Qianfeng runtime should create the schedule and call `radar_create_collection_task` with the provided `execution_payload` at runtime.
+
 ## Architecture
 
 ```text

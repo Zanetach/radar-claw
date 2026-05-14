@@ -133,6 +133,27 @@ class WebChatTests(unittest.TestCase):
             self.assertIn("请提供", result["reply"])
             self.assertEqual(conn.execute("SELECT COUNT(*) AS count FROM crawl_runs").fetchone()["count"], 0)
 
+    def test_agent_chat_scheduled_request_returns_runtime_schedule_without_run(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            result = handler.api_agent_chat({"message": "每天 10 点抓取 @OpenAI 最近 24 小时推文", "execute": True})
+
+            self.assertIsNone(result["run"])
+            self.assertEqual(result["agent_feedback"]["status"], "requires_runtime_schedule")
+            schedule_request = result["agent_feedback"]["runtime_schedule"]
+            self.assertEqual(schedule_request["owner"], "hermes_agent_runtime")
+            self.assertFalse(schedule_request["radar_executes_schedule"])
+            self.assertEqual(schedule_request["execution_tool"], "radar_create_collection_task")
+            self.assertEqual(schedule_request["execution_payload"]["identifier"], "OpenAI")
+            self.assertEqual(schedule_request["execution_payload"]["date_range"], "24h")
+            self.assertEqual(conn.execute("SELECT COUNT(*) AS count FROM crawl_runs").fetchone()["count"], 0)
+
     def test_save_organized_content_preserves_original_and_writes_translation(self):
         with TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "radar.db"

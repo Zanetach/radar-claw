@@ -85,6 +85,10 @@ def radar_agent_collect(
     Pass the user's original instruction here. Radar parses intent, chooses the
     strategy/provider, calls feedgrab, saves raw content and media assets, then
     returns agent_feedback for the AI employee to relay.
+
+    If the user asks for scheduled collection, Radar returns
+    agent_feedback.status=requires_runtime_schedule and a runtime_schedule
+    payload. The Agent runtime owns actual scheduling.
     """
     payload: dict[str, Any] = {
         "message": instruction,

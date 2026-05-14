@@ -47,6 +47,8 @@ feedgrab 使用 `iBigQiang/feedgrab` 作为底层采集内核。所有媒介平�
 8. AI 员工使用 `agent_feedback.message` 返回采集报告。
 9. 后续如需整理/分析，再由当前 AI 员工或另一个内容整理员工调用 `radar_handoff_to_organizer`。
 
+定时采集边界：Hermes/千蜂 AI Agent runtime 负责定时唤醒。Radar 不内置 cron，不主动循环执行。用户提出“每天/每小时/定时”时，Radar 返回 `agent_feedback.status=requires_runtime_schedule` 和 `runtime_schedule.execution_payload`；Agent runtime 以此创建调度，到点调用 `radar_create_collection_task`。
+
 ## v1 边界
 
 v1 做：
@@ -55,6 +57,7 @@ v1 做：
 - X MCP 作为 feedgrab X provider 的生产默认路径。
 - feedgrab URL/content 路由：小红书、微信公众号、YouTube、Bilibili、抖音、微博、知乎、GitHub、飞书、金山文档、有道云笔记、RSS、Telegram、Reddit、HackerNews、Medium、LinuxDo、IDCFlare、小宇宙、喜马拉雅、通用 Web URL。
 - collection task / raw content / provider health / optional organizer handoff API。
+- 对定时需求返回 Agent runtime 调度契约，不在 Radar 内部执行 cron。
 - `crawl_run_contents` 精确记录任务产出内容，避免并发任务用时间窗口误关联。
 - 原始数据集导出，支持 JSON、JSONL、Markdown，供同一 AI 员工或其他 Agent 消费。
 - Radar MCP collection tools。

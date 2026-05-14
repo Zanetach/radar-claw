@@ -467,6 +467,45 @@ def source_url_required_message(task: dict) -> str:
     )
 
 
+def runtime_collection_payload(task: dict) -> dict:
+    return {
+        "identifier": task.get("identifier") or "",
+        "url": task.get("url") or "",
+        "query": task.get("query") or "",
+        "platform": task.get("platform") or "x",
+        "mode": task.get("mode") or "auto",
+        "strategy_id": task.get("strategyId") or task.get("strategy_id") or "",
+        "category": task.get("category") or "Chat采集",
+        "date_range": task.get("dateRange") or "7d",
+        "limit": int(task.get("maxResults") or task.get("limit") or 20),
+        "include_original": camel_bool(task.get("includeOriginal", True)),
+        "include_replies": camel_bool(task.get("includeReplies", False)),
+        "include_retweets": camel_bool(task.get("includeRetweets", False)),
+        "include_quotes": camel_bool(task.get("includeQuotes", True)),
+        "download_images": camel_bool(task.get("downloadImages", True)),
+        "download_videos": camel_bool(task.get("downloadVideos", True)),
+        "media_only": camel_bool(task.get("mediaOnly", False)),
+    }
+
+
+def runtime_schedule_request(task: dict) -> dict:
+    return {
+        "owner": "hermes_agent_runtime",
+        "radar_executes_schedule": False,
+        "schedule_text": task.get("schedule") or "定时任务",
+        "source_instruction": task.get("prompt") or "",
+        "execution_tool": "radar_create_collection_task",
+        "execution_payload": runtime_collection_payload(task),
+    }
+
+
+def runtime_schedule_message() -> str:
+    return (
+        "已解析为定时采集请求。Radar 不负责定时唤醒；"
+        "请在 Hermes/千蜂 Agent runtime 创建调度，到点调用 radar_create_collection_task。"
+    )
+
+
 def load_dotenv_file(path: Path) -> None:
     if not path.exists():
         return
@@ -2589,38 +2628,19 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 },
             }
 
-        conn = self.conn()
         if task.get("schedule"):
-            input_label = task.get("identifier") or task.get("category") or "Chat 定时任务"
-            run_id = self.create_run(
-                conn,
-                body=task,
-                source_type=task["sourceType"],
-                input_label=input_label,
-                status="scheduled",
-            )
-            report = {
-                "accounts": 0,
-                "successes": 0,
-                "saved": 0,
-                "failures": 0,
-                "media": {"downloaded": 0, "failed": 0},
-                "feishuWritten": 0,
-                "details": [{"message": "任务已进入定时任务列表，等待调度器执行。"}],
-            }
-            self.finish_run(conn, run_id, report)
-            conn.execute(
-                "UPDATE crawl_runs SET status = 'scheduled', report_json = ? WHERE id = ?",
-                (json.dumps(report, ensure_ascii=False, sort_keys=True), run_id),
-            )
-            conn.commit()
-            run = self.api_run_detail(run_id)
-            feedback = run["agent_feedback"]
+            schedule = runtime_schedule_request(task)
+            message = runtime_schedule_message()
             return {
-                "reply": feedback["message"],
+                "reply": message,
                 "task": task,
-                "run": run,
-                "agent_feedback": feedback,
+                "run": None,
+                "agent_feedback": {
+                    "audience": "ai_employee",
+                    "status": "requires_runtime_schedule",
+                    "message": message,
+                    "runtime_schedule": schedule,
+                },
             }
 
         if task["sourceType"] == "account" and not task.get("identifier"):
