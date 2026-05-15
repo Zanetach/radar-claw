@@ -1,10 +1,12 @@
 # 数据采集 Agent 落地方案
 
+> 当前命名说明：Radar 对 AI 员工、Hermes MCP 和业务文档公开的采集引擎名称统一为 **Beeclaw**。本文中历史出现的 `feedgrab` 指 upstream feedgrab backend 或旧 provider alias；新任务、新 Skill、新 API 输出应使用 `beeclaw:*`。
+
 ## 一、建设目标
 
 建设一个统一的数据采集工具，用来支撑千蜂 AI 员工持续采集外部公开信息和授权账号可访问的信息，形成“任务下达、意图识别、采集执行、数据入库、结果反馈、后续整理”的闭环。
 
-本项目不是做单个平台爬虫，也不是写死一个固定 Agent。Radar 是一个可管理、可扩展、可被任意 Hermes/千蜂 AI 员工调用的多平台数据采集工具。第一阶段只要求把数据采集完整跑通：AI 员工理解采集需求，调用 Radar/feedgrab 执行抓取，把原始内容、媒体、指标和失败原因沉淀成数据库资产。
+本项目不是做单个平台爬虫，也不是写死一个固定 Agent。Radar 是一个可管理、可扩展、可被任意 Hermes/千蜂 AI 员工调用的多平台数据采集工具。第一阶段只要求把数据采集完整跑通：AI 员工理解采集需求，调用 Radar/Beeclaw 执行抓取，把原始内容、媒体、指标和失败原因沉淀成数据库资产。
 
 核心目标：
 
@@ -29,10 +31,10 @@ X 是第一优先级平台，也是当前基础最成熟的平台。
 
 支持方式：
 
-- feedgrab X provider，统一封装 X 官方 XMCP、X API、x-rss、browser-session 等能力。
-- X 官方 XMCP 作为 feedgrab 内部能力，不再作为 Radar 单独直连 provider。
-- x-rss 免费模式作为 feedgrab / Radar 的低成本补充路径。
-- browser-session 只作为授权账号补充路径，默认关闭。
+- Beeclaw X provider 对外统一为 `beeclaw:x`。
+- X 官方 XMCP、X API、x-rss 作为 Beeclaw 内部 backend 自动选择。
+- x-rss 免费模式作为 Beeclaw / Radar 的低成本补充路径。
+- browser-session 只作为显式调试路径，不进入默认生产 auto 顺序。
 
 采集内容：
 
@@ -222,7 +224,7 @@ http://localhost:18060/mcp
 
 - X 采集 provider。
 - x-rss 免费源。
-- feedgrab 可作为统一 provider 层，内部封装 XMCP、X API、x-rss、X browser fallback、小红书、微信公众号、YouTube、RSS 等抓取能力。
+- Beeclaw 可作为统一 provider 层，内部封装 X MCP、X API、x-rss、小红书、微信公众号、YouTube、RSS 等抓取能力。
 - 媒体下载。
 - SQLite 内容库。
 - API/日志诊断。
@@ -243,8 +245,8 @@ Radar Agent API / Radar MCP Server
         v
 采集调度层
         |
-        +-- feedgrab Provider
-        |     +-- X: XMCP / X API / x-rss / browser-session
+        +-- Beeclaw Provider
+        |     +-- X: beeclaw:x(auto) -> x_mcp / x_api / x_rss
         |     +-- 小红书兜底抓取
         |     +-- 微信公众号 / YouTube / RSS / Web
         +-- 小红书 MCP Provider
@@ -462,7 +464,7 @@ API/日志诊断可以看到：
 形成稳定扩展框架：
 
 - 新平台只需要新增 provider。
-- X 的 XMCP、API、x-rss、browser-session 由 feedgrab 统一封装，Radar 不需要维护多套 X provider 入口。
+- X 的 XMCP、API、x-rss 由 Beeclaw 统一封装，Radar 不需要维护多套 X provider 入口。
 - 新工作流只需要新增 Agent task。
 - 新输出渠道只需要接结构化执行结果。
 - 采集失败不会静默丢失，而是结构化记录。
@@ -535,7 +537,7 @@ flowchart TD
     F --> P7["Instagram"]
     F --> P8["Amazon"]
 
-    P1 --> R1["feedgrab: XMCP / X API / x-rss / browser-session"]
+    P1 --> R1["Beeclaw X: x_mcp / x_api / x_rss"]
     P2 --> R2["xiaohongshu-mcp优先，feedgrab兜底"]
     P3 --> R3["feedgrab WeChat Provider"]
     P4 --> R4["feedgrab YouTube Provider"]
@@ -772,11 +774,11 @@ Radar 根据平台和模式选择 provider。
 X 路由：
 
 ```text
-Radar -> feedgrab Provider
+Radar -> Beeclaw Provider
              |
-             +-- 优先 XMCP / X API
-             +-- 补充 x-rss
-             +-- 兜底 browser-session / URL reader
+             +-- beeclaw:x(auto)
+             +-- x_mcp / x_api / x_rss 自动选择
+             +-- browser-session 仅显式调试
 ```
 
 小红书路由：

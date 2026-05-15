@@ -1,6 +1,6 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from crawler.models import ContentItem, FetchResult
 from crawler.providers import (
@@ -180,29 +180,94 @@ class ProviderTests(unittest.TestCase):
                 provider.fetch({"id": 1, "account_name": "elonmusk"}, max_results=10)
         self.assertEqual(ctx.exception.error_type, "webbridge_unavailable")
 
+    def test_browser_session_marks_profile_reposts_for_filtering(self):
+        provider = XBrowserSessionProvider()
+        provider.client = Mock()
+        provider.client.base_url = "http://127.0.0.1:10086"
+        provider.client.evaluate_json.return_value = {
+            "items": [
+                {
+                    "id": "repost-1",
+                    "text": "Grok 4.3 is next level.",
+                    "url": "https://x.com/AdamLowisz/status/repost-1",
+                    "raw_text": "Elon Musk reposted\nAdam Lowisz\n@AdamLowisz\nGrok 4.3 is next level.",
+                },
+                {
+                    "id": "own-1",
+                    "text": "Mars update",
+                    "url": "https://x.com/elonmusk/status/own-1",
+                    "raw_text": "Elon Musk\n@elonmusk\nMars update",
+                },
+            ]
+        }
+
+        with patch("crawler.providers.webbridge_status", return_value={"reachable": True}):
+            result = provider.fetch({"id": 1, "account_name": "elonmusk", "account_handle": "elonmusk"}, max_results=10)
+
+        self.assertEqual(result.items[0].raw_payload["author_username"], "AdamLowisz")
+        self.assertEqual(result.items[0].raw_payload["referenced_tweets"], [{"type": "retweeted", "id": "repost-1"}])
+        self.assertEqual(result.items[1].raw_payload["author_username"], "elonmusk")
+        self.assertEqual(result.items[1].raw_payload["referenced_tweets"], [])
+
     def test_provider_mode_aliases_are_normalized(self):
         self.assertEqual(normalize_provider_mode("chrome"), "chrome-session")
         self.assertEqual(normalize_provider_mode("mcp"), "xmcp")
-        self.assertEqual(normalize_provider_mode("feedgrab:xmcp"), "feedgrab:x_mcp")
-        self.assertEqual(normalize_provider_mode("feedgrab:x_rss"), "feedgrab:x_rss")
+        self.assertEqual(normalize_provider_mode("beeclaw:x"), "beeclaw:x")
+        self.assertEqual(normalize_provider_mode("feedgrab:x"), "beeclaw:x")
+        self.assertEqual(normalize_provider_mode("beeclaw:x_api"), "api")
+        self.assertEqual(normalize_provider_mode("feedgrab:x_api"), "api")
+        self.assertEqual(normalize_provider_mode("feedgrab:xmcp"), "beeclaw:x_mcp")
+        self.assertEqual(normalize_provider_mode("beeclaw:xmcp"), "beeclaw:x_mcp")
+        self.assertEqual(normalize_provider_mode("feedgrab:x_rss"), "beeclaw:x_rss")
+        self.assertEqual(normalize_provider_mode("beeclaw:x_rss"), "beeclaw:x_rss")
         self.assertEqual(normalize_provider_mode("rss"), "x-rss")
 
     def test_provider_capabilities_expose_platform_matrix(self):
         capabilities = provider_mode_capabilities()
         self.assertTrue(capabilities["chrome-session"]["x"])
-        self.assertTrue(capabilities["feedgrab:x_mcp"]["x"])
-        self.assertTrue(capabilities["feedgrab:x_rss"]["x"])
+        self.assertTrue(capabilities["beeclaw:x"]["x"])
+        self.assertTrue(capabilities["beeclaw:x_mcp"]["x"])
+        self.assertTrue(capabilities["beeclaw:x_rss"]["x"])
+        self.assertTrue(capabilities["beeclaw"]["github"])
         self.assertFalse(capabilities["chrome-session"]["youtube"])
         self.assertTrue(capabilities["api"]["instagram"])
 
-    @patch.object(XMcpXProvider, "fetch")
+    @patch("crawler.providers.read_url")
+    def test_beeclaw_url_account_provider_reads_platform_account_url(self, read_url):
+        read_url.return_value = {
+            "source_type": "web",
+            "source_name": "GitHub",
+            "title": "Repo",
+            "content": "Repository content",
+            "url": "https://github.com/Zanetach/radar-claw",
+            "id": "repo-1",
+            "extra": {},
+        }
+
+        result = build_provider("github", mode="beeclaw").fetch(
+            {
+                "id": 1,
+                "platform": "github",
+                "account_name": "radar-claw",
+                "account_url": "https://github.com/Zanetach/radar-claw",
+            },
+            max_results=10,
+        )
+
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].platform, "github")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:github")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "beeclaw:universal_reader")
+
+    @patch.object(XBrowserSessionProvider, "fetch")
+    @patch.object(XRssProvider, "fetch")
     @patch.object(XApiProvider, "__init__", return_value=None)
     @patch.object(XApiProvider, "fetch")
-    @patch.object(XBrowserSessionProvider, "fetch")
-    def test_auto_x_falls_back_from_xmcp_and_api_to_chrome(self, browser_fetch, api_fetch, _api_init, xmcp_fetch):
+    @patch.object(XMcpXProvider, "fetch")
+    def test_auto_x_falls_back_from_xmcp_and_api_to_x_rss(self, xmcp_fetch, api_fetch, _api_init, rss_fetch, browser_fetch):
         xmcp_fetch.side_effect = ProviderError("credits depleted", error_type="credits_depleted", status_code=402)
         api_fetch.side_effect = ProviderError("missing token", error_type="missing_credentials")
-        browser_fetch.return_value = FetchResult(
+        rss_fetch.return_value = FetchResult(
             account_id=1,
             platform="x",
             items=[
@@ -219,7 +284,7 @@ class ProviderTests(unittest.TestCase):
                     share_count=None,
                     media_type="post",
                     language=None,
-                    raw_payload={},
+                    raw_payload={"source": "beeclaw:x_rss", "provider_backend": "xgo_rss"},
                 )
             ],
         )
@@ -228,9 +293,14 @@ class ProviderTests(unittest.TestCase):
 
         self.assertEqual(len(result.items), 1)
         self.assertEqual(result.items[0].text, "ok")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:x")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "x_rss")
+        self.assertEqual(result.items[0].raw_payload["backend_attempts"][0]["backend"], "x_mcp")
+        self.assertEqual(result.items[0].raw_payload["backend_attempts"][-1]["status"], "success")
         self.assertTrue(xmcp_fetch.called)
         self.assertTrue(api_fetch.called)
-        self.assertTrue(browser_fetch.called)
+        self.assertTrue(rss_fetch.called)
+        self.assertFalse(browser_fetch.called)
 
     @patch("crawler.providers.http_post_json")
     def test_webbridge_client_unwraps_stringified_json(self, http_post_json):
@@ -287,11 +357,12 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(len(result.items), 1)
         self.assertEqual(result.items[0].url, "https://x.com/realDonaldTrump/status/999")
         self.assertEqual(result.items[0].view_count, 10)
-        self.assertEqual(result.items[0].raw_payload["source"], "xmcp")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:x")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "x_mcp")
         self.assertEqual(result.items[0].media_assets[0]["download_url"], "https://video.twimg.com/high.mp4")
 
     @patch("crawler.providers.mcp_call_tool")
-    def test_feedgrab_xmcp_mode_marks_provider_source(self, mcp_call_tool):
+    def test_beeclaw_xmcp_mode_marks_provider_source_and_backend(self, mcp_call_tool):
         def fake_call(_server_url, tool_name, args):
             if tool_name == "getUsersByUsername":
                 return {"data": {"id": "123", "username": "OpenAI"}}
@@ -311,7 +382,46 @@ class ProviderTests(unittest.TestCase):
         mcp_call_tool.side_effect = fake_call
         provider = build_provider("x", mode="feedgrab:x_mcp")
         result = provider.fetch({"id": 1, "account_name": "OpenAI", "account_handle": "OpenAI"}, max_results=5)
-        self.assertEqual(result.items[0].raw_payload["source"], "feedgrab:x_mcp")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:x")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "x_mcp")
+
+    @patch("crawler.providers.mcp_call_tool", side_effect=AssertionError("local MCP endpoint should not be used"))
+    @patch("crawler.providers.call_platform_mcp_tool")
+    def test_xmcp_provider_uses_platform_gateway_when_enabled(self, gateway_call, _local_mcp_call):
+        def fake_gateway_call(*, integration, tool, arguments, trace_id=None):
+            self.assertEqual(integration, "x-mcp")
+            if tool == "getUsersByUsername":
+                self.assertEqual(arguments["username"], "OpenAI")
+                return {"data": {"id": "123", "username": "OpenAI"}}
+            if tool == "getUsersPosts":
+                self.assertEqual(arguments["id"], "123")
+                return {
+                    "data": [
+                        {
+                            "id": "gateway-1",
+                            "text": "from platform gateway",
+                            "created_at": "2026-05-06T00:00:00Z",
+                            "public_metrics": {"impression_count": 7},
+                        }
+                    ]
+                }
+            raise AssertionError(tool)
+
+        gateway_call.side_effect = fake_gateway_call
+        with patch.dict(
+            os.environ,
+            {
+                "RADAR_BACKEND_MCP_MODE": "platform_gateway",
+                "PLATFORM_MCP_GATEWAY_URL": "http://gateway.local/mcp",
+            },
+        ):
+            provider = build_provider("x", mode="beeclaw:x_mcp")
+            result = provider.fetch({"id": 1, "account_name": "OpenAI", "account_handle": "OpenAI"}, max_results=5)
+
+        self.assertEqual(result.items[0].original_content_id, "gateway-1")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:x")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "x_mcp")
+        self.assertEqual(gateway_call.call_count, 2)
 
 
 if __name__ == "__main__":

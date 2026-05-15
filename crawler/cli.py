@@ -263,6 +263,25 @@ def cmd_crawl_person(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_worker(args: argparse.Namespace) -> int:
+    from .worker import process_queued_runs, run_worker_loop
+
+    if args.daemon:
+        result = run_worker_loop(
+            args.db,
+            limit=max(0, args.limit),
+            poll_interval_seconds=args.poll_interval,
+            idle_limit=max(0, args.idle_limit),
+            retry_delay_seconds=args.retry_delay,
+        )
+    else:
+        result = process_queued_runs(args.db, limit=args.limit, retry_delay_seconds=args.retry_delay)
+    print(f"worker processed queued runs: {result['processed']}")
+    for run in result["runs"]:
+        print(f"{run['id']} status={run['status']} saved={run['saved_count']} failures={run['failure_count']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Radar external source account crawler")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB, help="SQLite database path")
@@ -284,9 +303,27 @@ def build_parser() -> argparse.ArgumentParser:
     crawl_parser.add_argument("--category", help="only crawl accounts in this category")
     crawl_parser.add_argument(
         "--mode",
-        choices=["auto", "no-token", "api", "browser-session", "chrome-session", "xmcp", "feedgrab", "feedgrab:x_mcp", "feedgrab:x_rss", "x-rss"],
+        choices=[
+            "auto",
+            "no-token",
+            "api",
+            "browser-session",
+            "chrome-session",
+            "xmcp",
+            "beeclaw",
+            "beeclaw:x",
+            "beeclaw:x_mcp",
+            "beeclaw:x_api",
+            "beeclaw:x_rss",
+            "feedgrab",
+            "feedgrab:x",
+            "feedgrab:x_mcp",
+            "feedgrab:x_api",
+            "feedgrab:x_rss",
+            "x-rss",
+        ],
         default="auto",
-        help="crawl mode: auto prefers feedgrab X MCP where available and falls back to API/RSS/browser modes",
+        help="crawl mode: auto uses Beeclaw X backend selection (x_mcp -> x_api -> x_rss)",
     )
     crawl_parser.add_argument("--limit", type=int, help="maximum accounts to crawl")
     crawl_parser.add_argument("--max-results", type=int, default=20, help="maximum content items per account")
@@ -303,7 +340,25 @@ def build_parser() -> argparse.ArgumentParser:
     person_parser.add_argument("--category", default="单人采集", help="category saved for this account")
     person_parser.add_argument(
         "--mode",
-        choices=["auto", "no-token", "api", "browser-session", "chrome-session", "xmcp", "feedgrab", "feedgrab:x_mcp", "feedgrab:x_rss", "x-rss"],
+        choices=[
+            "auto",
+            "no-token",
+            "api",
+            "browser-session",
+            "chrome-session",
+            "xmcp",
+            "beeclaw",
+            "beeclaw:x",
+            "beeclaw:x_mcp",
+            "beeclaw:x_api",
+            "beeclaw:x_rss",
+            "feedgrab",
+            "feedgrab:x",
+            "feedgrab:x_mcp",
+            "feedgrab:x_api",
+            "feedgrab:x_rss",
+            "x-rss",
+        ],
         default="auto",
     )
     person_parser.add_argument("--max-results", type=int, default=20)
@@ -311,6 +366,14 @@ def build_parser() -> argparse.ArgumentParser:
     person_parser.add_argument("--media-only", action="store_true", help="only save posts with images or videos")
     person_parser.add_argument("--media-dir", type=Path, default=DEFAULT_MEDIA_DIR, help="media download directory")
     person_parser.set_defaults(func=cmd_crawl_person)
+
+    worker_parser = subparsers.add_parser("worker", help="process queued collection tasks")
+    worker_parser.add_argument("--limit", type=int, default=1, help="maximum queued tasks to process")
+    worker_parser.add_argument("--daemon", action="store_true", help="poll continuously until stopped or --limit is reached")
+    worker_parser.add_argument("--poll-interval", type=float, default=5.0, help="seconds between empty queue polls")
+    worker_parser.add_argument("--idle-limit", type=int, default=1, help="stop daemon after this many empty polls; 0 means never stop")
+    worker_parser.add_argument("--retry-delay", type=int, default=60, help="seconds before failed retryable tasks are requeued")
+    worker_parser.set_defaults(func=cmd_worker)
 
     intel_parser = subparsers.add_parser("import-x-intel", help="import BestBlogs/xgo.ing X RSS accounts")
     intel_parser.add_argument("--opml-url", default=BESTBLOGS_OPML_URL)

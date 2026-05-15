@@ -25,7 +25,11 @@ mcp = FastMCP(
     instructions=(
         "Tools for the local Radar/Hermes content workflow. "
         "Crawler tools create raw data, organizer tools process selected raw "
-        "content, and publisher tools publish only organized content."
+        "content, and publisher tools publish only organized content. "
+        "Radar MCP is the AI employee entrypoint; platform backend MCPs such "
+        "as X MCP and Xiaohongshu MCP are managed by a platform MCP Manager and "
+        "called by Radar through its Gateway. They are visible through "
+        "radar_list_mcp_integrations."
     ),
 )
 
@@ -64,14 +68,65 @@ def radar_diagnostics() -> dict[str, Any]:
 
 @mcp.tool()
 def radar_list_providers(platform: str = "") -> dict[str, Any]:
-    """List feedgrab-backed providers and their collection capabilities."""
+    """List Beeclaw providers and their collection capabilities."""
     return _request("GET", _query("/api/providers", {"platform": platform}))
 
 
 @mcp.tool()
 def radar_check_provider_health() -> dict[str, Any]:
-    """Check feedgrab, X MCP, Radar media storage, and related provider readiness."""
+    """Check Beeclaw, upstream feedgrab backend, X MCP, XHS MCP, and media readiness."""
     return _request("GET", "/api/providers/health")
+
+
+@mcp.tool()
+def radar_check_production_readiness() -> dict[str, Any]:
+    """Check the six production-readiness areas for large-scale collection.
+
+    Use this before production rollout or when the user asks what still blocks
+    large-scale collection. The result separates project-side implemented
+    capabilities from external platform/MCP/credits validation.
+    """
+    return _request("GET", "/api/production-readiness")
+
+
+@mcp.tool()
+def radar_list_mcp_integrations(integration_type: str = "") -> dict[str, Any]:
+    """List MCP integrations visible to Qianfeng platform.
+
+    Radar MCP is the AI-employee tool entrypoint. Backend MCPs such as X MCP
+    and Xiaohongshu MCP are platform-managed connectors used by Radar/Beeclaw
+    through the configured platform MCP Manager/Gateway and should not be bound to normal AI
+    employees by default.
+    """
+    return _request("GET", _query("/api/mcp/integrations", {"type": integration_type}))
+
+
+@mcp.tool()
+def radar_xmcp_pressure_test(
+    handles: str = "",
+    max_accounts: int = 2,
+    max_results: int = 5,
+    execute: bool = False,
+    queue: bool = True,
+    max_attempts: int = 1,
+) -> dict[str, Any]:
+    """Create a bounded real X MCP pressure test plan or queued batch task.
+
+    Keep max_accounts and max_results small unless the user explicitly accepts
+    the X API credits impact.
+    """
+    return _request(
+        "POST",
+        "/api/providers/xmcp/pressure-test",
+        {
+            "handles": handles,
+            "maxAccounts": max_accounts,
+            "maxResults": max_results,
+            "execute": execute,
+            "queue": queue,
+            "maxAttempts": max_attempts,
+        },
+    )
 
 
 @mcp.tool()
@@ -83,7 +138,7 @@ def radar_agent_collect(
     """Natural-language Radar collection entrypoint for AI employees.
 
     Pass the user's original instruction here. Radar parses intent, chooses the
-    strategy/provider, calls feedgrab, saves raw content and media assets, then
+    strategy/provider, calls Beeclaw, saves raw content and media assets, then
     returns agent_feedback for the AI employee to relay.
 
     If the user asks for scheduled collection, Radar returns
@@ -103,6 +158,7 @@ def radar_agent_collect(
 def radar_create_collection_task(
     identifier: str = "",
     url: str = "",
+    urls: str = "",
     query: str = "",
     platform: str = "x",
     mode: str = "auto",
@@ -117,10 +173,15 @@ def radar_create_collection_task(
     download_images: bool = True,
     download_videos: bool = True,
     media_only: bool = False,
+    queue: bool = False,
 ) -> dict[str, Any]:
-    """Create a Radar collection task backed by feedgrab providers.
+    """Create a Radar collection task backed by Beeclaw providers.
 
-    For URL/content collection, pass url. Radar will route supported feedgrab
+    For URL/content collection, pass url. For large URL batches, pass urls as
+    newline- or comma-separated URLs; Radar will create a parent batch task and
+    queued child tasks for the worker.
+
+    Radar will route supported Beeclaw
     platforms such as XHS, WeChat, YouTube, Bilibili, Douyin, Weibo, Zhihu,
     GitHub, Feishu, Kdocs, Youdao, RSS, Telegram, Reddit, HackerNews, Medium,
     LinuxDo, IDCFlare, Xiaoyuzhou, Ximalaya, and generic Web URLs.
@@ -129,10 +190,12 @@ def radar_create_collection_task(
     agent_feedback.message as the user-facing result and agent_feedback.next_actions
     for export or content organizer handoff.
     """
+    has_urls = bool(urls.strip())
     payload = {
-        "sourceType": "url" if url else ("keyword" if query else ("account" if identifier else "file")),
+        "sourceType": "url" if (url or has_urls) else ("keyword" if query else ("account" if identifier else "file")),
         "identifier": identifier,
         "url": url,
+        "urls": urls,
         "query": query,
         "platform": platform,
         "mode": mode,
@@ -149,6 +212,7 @@ def radar_create_collection_task(
         "downloadVideos": download_videos,
         "downloadMedia": download_images or download_videos,
         "mediaOnly": media_only,
+        "queue": queue,
     }
     return _request("POST", "/api/collection-tasks", payload)
 
@@ -160,10 +224,72 @@ def radar_get_collection_task(task_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def radar_retry_collection_task(task_id: str, queue: bool = True) -> dict[str, Any]:
+    """Retry an existing collection task. Use queue=true for production async retry."""
+    return _request("POST", f"/api/runs/{urllib.parse.quote(task_id)}/retry", {"queue": queue})
+
+
+@mcp.tool()
+def radar_list_media_assets(content_id: int = 0, run_id: str = "", status: str = "", limit: int = 100) -> dict[str, Any]:
+    """List collected media assets and their download status."""
+    return _request(
+        "GET",
+        _query(
+            "/api/media-assets",
+            {
+                "contentId": content_id or "",
+                "runId": run_id,
+                "status": status,
+                "limit": limit,
+            },
+        ),
+    )
+
+
+@mcp.tool()
+def radar_retry_media_asset(media_id: int) -> dict[str, Any]:
+    """Retry one failed or pending media asset download."""
+    return _request("POST", f"/api/media-assets/{media_id}/retry", {})
+
+
+@mcp.tool()
+def radar_retry_media_assets(content_id: int = 0, run_id: str = "", status: str = "failed", limit: int = 100) -> dict[str, Any]:
+    """Retry a batch of failed or pending media assets."""
+    return _request(
+        "POST",
+        "/api/media-assets/retry",
+        {
+            "contentId": content_id,
+            "runId": run_id,
+            "status": status,
+            "limit": limit,
+        },
+    )
+
+
+@mcp.tool()
+def radar_export_media_assets(content_id: int = 0, run_id: str = "", status: str = "", limit: int = 100, output_format: str = "json") -> dict[str, Any]:
+    """Export collected media asset manifests as JSON, JSONL, or Markdown."""
+    return _request(
+        "GET",
+        _query(
+            "/api/media-assets/export",
+            {
+                "contentId": content_id or "",
+                "runId": run_id,
+                "status": status,
+                "limit": limit,
+                "format": output_format,
+            },
+        ),
+    )
+
+
+@mcp.tool()
 def radar_create_crawl_run(
     identifier: str = "",
     platform: str = "x",
-    mode: str = "feedgrab:x_mcp",
+    mode: str = "auto",
     category: str = "Chat采集",
     date_range: str = "7d",
     limit: int = 20,
@@ -177,10 +303,9 @@ def radar_create_crawl_run(
 ) -> dict[str, Any]:
     """Create and run a crawl task. Use this only from the crawler agent.
 
-    For X, supported modes include feedgrab:x_mcp, feedgrab:x_rss, xmcp,
-    api, chrome-session, browser-session, x-rss, no-token, and auto.
-    feedgrab:x_rss/no-token generate xgo RSS URLs from normal handles and
-    do not require X API credits.
+    For X, use auto by default. Radar exposes provider beeclaw:x and records
+    the selected execution_backend such as x_mcp, x_api, or x_rss. Explicit
+    legacy modes such as beeclaw:x_mcp and beeclaw:x_rss remain supported.
     """
     payload = {
         "sourceType": "account" if identifier else "file",
@@ -213,7 +338,7 @@ def radar_create_strategy(
     name: str,
     description: str = "",
     platform: str = "x",
-    mode: str = "feedgrab:x_mcp",
+    mode: str = "auto",
     date_range: str = "7d",
     category: str = "",
     max_results: int = 20,
@@ -262,7 +387,7 @@ def radar_create_employee_task(
     identifier: str = "",
     strategy_id: str = "",
     platform: str = "x",
-    mode: str = "feedgrab:x_mcp",
+    mode: str = "auto",
     category: str = "Chat采集",
     max_results: int = 20,
     content_ids: list[int] | None = None,
@@ -363,6 +488,112 @@ def radar_handoff_to_organizer(
             "summarize": summarize,
             "classify": classify,
             "qualityScore": quality_score,
+        },
+    )
+
+
+@mcp.tool()
+def radar_handoff_to_interaction_agent(
+    content_ids: list[int],
+    target_channel: str = "",
+    golden_window_score: bool = True,
+    generate_reply: bool = True,
+    generate_quote: bool = True,
+    risk_check: bool = True,
+) -> dict[str, Any]:
+    """Generate a golden-interaction-window task for selected raw content.
+
+    The interaction-capable Agent should score the included items, generate
+    reply/quote suggestions, then write candidates back with
+    radar_save_interaction_candidates.
+    """
+    return _request(
+        "POST",
+        "/api/raw-contents/handoff/interaction",
+        {
+            "contentIds": content_ids,
+            "targetChannel": target_channel,
+            "goldenWindowScore": golden_window_score,
+            "generateReply": generate_reply,
+            "generateQuote": generate_quote,
+            "riskCheck": risk_check,
+        },
+    )
+
+
+@mcp.tool()
+def radar_save_interaction_candidates(candidates_json: str) -> dict[str, Any]:
+    """Save Hermes-generated golden-window scores and interaction suggestions.
+
+    candidates_json must be a JSON array. Each item should include contentId,
+    windowScore, scoreReason, actionType, suggestedReply and/or suggestedQuote.
+    """
+    candidates = json.loads(candidates_json)
+    return _request("POST", "/api/interaction-candidates", {"candidates": candidates})
+
+
+@mcp.tool()
+def radar_list_interaction_candidates(
+    status: str = "",
+    target_channel: str = "",
+    run_id: str = "",
+    platform: str = "",
+    min_score: int = 0,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """List saved golden-interaction-window candidates."""
+    return _request(
+        "GET",
+        _query(
+            "/api/interaction-candidates",
+            {
+                "status": status,
+                "targetChannel": target_channel,
+                "runId": run_id,
+                "platform": platform,
+                "minScore": min_score or "",
+                "limit": limit,
+            },
+        ),
+    )
+
+
+@mcp.tool()
+def radar_export_interaction_candidates(
+    status: str = "",
+    target_channel: str = "",
+    limit: int = 100,
+    output_format: str = "json",
+) -> dict[str, Any]:
+    """Export golden-interaction-window candidates as JSON, JSONL, or Markdown."""
+    return _request(
+        "GET",
+        _query(
+            "/api/interaction-candidates/export",
+            {
+                "status": status,
+                "targetChannel": target_channel,
+                "limit": limit,
+                "format": output_format,
+            },
+        ),
+    )
+
+
+@mcp.tool()
+def radar_push_interaction_candidates(
+    candidate_ids: list[int],
+    target_channel: str = "",
+    push_status: str = "pushed",
+) -> dict[str, Any]:
+    """Mark interaction candidates as pushed to a downstream table/storage channel."""
+    return _request(
+        "POST",
+        "/api/interaction-candidates/push",
+        {
+            "candidateIds": candidate_ids,
+            "targetChannel": target_channel,
+            "pushStatus": push_status,
         },
     )
 

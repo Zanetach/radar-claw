@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VENV_DIR="${RADAR_VENV_DIR:-/Users/zane/.radar-venv}"
+PYTHON="${VENV_DIR}/bin/python"
+
+if [ ! -x "${PYTHON}" ]; then
+  echo "Beeclaw CLI requires ${PYTHON}." >&2
+  echo "Run ./tools/run_radar_api.sh once to create the local runtime." >&2
+  exit 1
+fi
+
+cd "${ROOT_DIR}"
+exec "${PYTHON}" -m crawler.agent_cli "$@"

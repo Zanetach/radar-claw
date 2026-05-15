@@ -23,8 +23,9 @@ Do not add or describe a standalone Radar user interface. Normal workflows must 
 
 - `crawler/` - Python backend, providers, database, feedgrab adapter, local Feishu/Markdown helpers.
 - `crawler/web.py` - local HTTP API backend used by MCP tools.
-- `crawler/providers.py` - X/API/RSS/XMCP/browser provider routing.
-- `crawler/feedgrab_adapter/` - adapter from feedgrab unified output to Radar content items.
+- `crawler/providers.py` - X/API/RSS/XMCP/platform-gateway/browser provider routing.
+- `crawler/beeclaw_adapter/` - Beeclaw adapter from upstream feedgrab unified output to Radar content items.
+- `crawler/platform_mcp_gateway.py` - Platform MCP Manager/Gateway client used to call platform-managed backend MCPs.
 - `tools/radar_mcp_server.py` - Hermes MCP server exposing Radar tools.
 - `tools/hermes_skills/` - Hermes skill definitions copied to `~/.hermes/skills`.
 - `docs/` - product, workflow, and deployment documentation.
@@ -95,5 +96,5 @@ python3 -m unittest discover -s tests -v
 - Keep platform credentials out of source files.
 - Prefer extending Radar APIs/tools over introducing parallel state stores.
 - Keep provider failures explicit and visible in run reports.
-- For X production, prefer `feedgrab:x_mcp` / X API when credits are available; use `feedgrab:x_rss` as free fallback.
+- For X production, prefer `beeclaw:x` auto mode. In platform production, `x_mcp` should call the platform-managed `X MCP` through the configured Platform MCP Manager/Gateway with `RADAR_BACKEND_MCP_MODE=platform_gateway`; use `beeclaw:x_rss` as free fallback.
 - Keep MCP tools as proxies to Radar HTTP APIs rather than importing `crawler.web` internals into the MCP process.

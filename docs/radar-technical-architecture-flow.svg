@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#059669"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #475569; }
+      .layer-title { font: 700 16px Arial, sans-serif; fill: #334155; }
+      .box-title { font: 700 17px Arial, sans-serif; fill: #0f172a; }
+      .box-text { font: 400 14px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 12px Arial, sans-serif; fill: #64748b; }
+      .arrow { stroke: #334155; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .arrow-green { stroke: #059669; stroke-width: 2.8; fill: none; marker-end: url(#arrow-green); }
+      .dash { stroke: #64748b; stroke-width: 2; stroke-dasharray: 8 6; fill: none; marker-end: url(#arrow); }
+      .card { filter: url(#shadow); rx: 18; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f8fafc"/>
+  <text x="60" y="66" class="title">技术视角：Radar 与平台 MCP / Provider 的调用架构</text>
+  <text x="60" y="100" class="subtitle">AI 员工只调用 Radar MCP；Radar 作为采集执行面，通过 Beeclaw 路由调用平台 MCP Gateway 或本地 fallback backend。</text>
+
+  <rect x="50" y="145" width="300" height="710" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2" rx="26"/>
+  <text x="78" y="180" class="layer-title">Agent Runtime 层</text>
+
+  <rect x="85" y="230" width="230" height="86" fill="#ffffff" stroke="#2563eb" stroke-width="2" class="card"/>
+  <text x="112" y="263" class="box-title">AI 员工</text>
+  <text x="112" y="291" class="box-text">千蜂 / Hermes Runtime</text>
+
+  <rect x="85" y="355" width="230" height="86" fill="#ffffff" stroke="#2563eb" stroke-width="2" class="card"/>
+  <text x="112" y="388" class="box-title">Radar Skill</text>
+  <text x="112" y="416" class="box-text">任务规则、边界、工具选择</text>
+
+  <rect x="85" y="480" width="230" height="86" fill="#ffffff" stroke="#2563eb" stroke-width="2" class="card"/>
+  <text x="112" y="513" class="box-title">Radar MCP</text>
+  <text x="112" y="541" class="box-text">radar_agent_collect 等工具</text>
+
+  <line x1="200" y1="316" x2="200" y2="351" class="arrow"/>
+  <line x1="200" y1="441" x2="200" y2="476" class="arrow"/>
+
+  <rect x="390" y="145" width="360" height="710" fill="#ecfdf5" stroke="#bbf7d0" stroke-width="2" rx="26"/>
+  <text x="418" y="180" class="layer-title">Radar 执行面</text>
+
+  <rect x="430" y="220" width="280" height="82" fill="#ffffff" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="458" y="252" class="box-title">HTTP API Proxy</text>
+  <text x="458" y="280" class="box-text">MCP server 只代理 Radar API</text>
+
+  <rect x="430" y="332" width="280" height="82" fill="#ffffff" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="458" y="364" class="box-title">Intent Parser / Task API</text>
+  <text x="458" y="392" class="box-text">解析任务，创建 collection task</text>
+
+  <rect x="430" y="444" width="280" height="82" fill="#ffffff" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="458" y="476" class="box-title">Worker / Run Runtime</text>
+  <text x="458" y="504" class="box-text">执行、重试、取消、失败记录</text>
+
+  <rect x="430" y="556" width="280" height="82" fill="#ffffff" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="458" y="588" class="box-title">Beeclaw Provider Router</text>
+  <text x="458" y="616" class="box-text">provider=beeclaw:x，mode=auto</text>
+
+  <rect x="430" y="668" width="280" height="82" fill="#ffffff" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="458" y="700" class="box-title">Storage Adapter</text>
+  <text x="458" y="728" class="box-text">source_contents / media_assets / reports</text>
+
+  <line x1="570" y1="302" x2="570" y2="328" class="arrow-green"/>
+  <line x1="570" y1="414" x2="570" y2="440" class="arrow-green"/>
+  <line x1="570" y1="526" x2="570" y2="552" class="arrow-green"/>
+  <line x1="570" y1="638" x2="570" y2="664" class="arrow-green"/>
+
+  <rect x="790" y="145" width="360" height="710" fill="#fff7ed" stroke="#fed7aa" stroke-width="2" rx="26"/>
+  <text x="818" y="180" class="layer-title">Provider / MCP 调用层</text>
+
+  <rect x="830" y="220" width="280" height="86" fill="#ffffff" stroke="#ea580c" stroke-width="2" class="card"/>
+  <text x="858" y="252" class="box-title">Platform MCP Manager</text>
+  <text x="858" y="278" class="box-text">平台控制面</text>
+  <text x="858" y="298" class="small">部署 / Secret / Allowlist / Health</text>
+
+  <rect x="830" y="354" width="280" height="86" fill="#ffffff" stroke="#ea580c" stroke-width="2" class="card"/>
+  <text x="858" y="386" class="box-title">Platform MCP Gateway</text>
+  <text x="858" y="414" class="box-text">integration + tool + arguments</text>
+
+  <rect x="830" y="488" width="280" height="86" fill="#ffffff" stroke="#ea580c" stroke-width="2" class="card"/>
+  <text x="858" y="520" class="box-title">Backend MCPs</text>
+  <text x="858" y="548" class="box-text">X MCP / 小红书 MCP / 未来平台 MCP</text>
+
+  <rect x="830" y="650" width="280" height="86" fill="#ffffff" stroke="#ea580c" stroke-width="2" class="card"/>
+  <text x="858" y="682" class="box-title">Local / Direct Backends</text>
+  <text x="858" y="710" class="box-text">X API / x-rss / browser-session</text>
+  <text x="858" y="730" class="small">Jina / gh / feedgrab / RSS parser</text>
+
+  <line x1="970" y1="306" x2="970" y2="350" class="dash"/>
+  <line x1="970" y1="440" x2="970" y2="484" class="arrow"/>
+
+  <rect x="1190" y="145" width="360" height="710" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="26"/>
+  <text x="1218" y="180" class="layer-title">外部平台与数据层</text>
+
+  <rect x="1230" y="250" width="280" height="92" fill="#fff7ed" stroke="#ea580c" stroke-width="2" class="card"/>
+  <text x="1258" y="283" class="box-title">外部平台</text>
+  <text x="1258" y="311" class="box-text">X / 小红书 / YouTube / RSS</text>
+  <text x="1258" y="331" class="small">Web / GitHub / 未来平台</text>
+
+  <rect x="1230" y="405" width="280" height="92" fill="#f8fafc" stroke="#64748b" stroke-width="2" class="card"/>
+  <text x="1258" y="438" class="box-title">Raw Content Contract</text>
+  <text x="1258" y="466" class="box-text">正文、链接、指标、媒体、raw payload</text>
+
+  <rect x="1230" y="560" width="280" height="92" fill="#f8fafc" stroke="#64748b" stroke-width="2" class="card"/>
+  <text x="1258" y="593" class="box-title">Radar Database</text>
+  <text x="1258" y="621" class="box-text">任务、内容、媒体、失败、运行报告</text>
+
+  <rect x="1230" y="715" width="280" height="92" fill="#ecfdf5" stroke="#059669" stroke-width="2" class="card"/>
+  <text x="1258" y="748" class="box-title">Agent Feedback</text>
+  <text x="1258" y="776" class="box-text">task_id、保存数、backend、warnings</text>
+
+  <line x1="315" y1="523" x2="426" y2="261" class="arrow"/>
+  <line x1="710" y1="597" x2="826" y2="397" class="arrow"/>
+  <line x1="710" y1="597" x2="826" y2="693" class="arrow"/>
+  <line x1="1110" y1="531" x2="1226" y2="296" class="arrow"/>
+  <line x1="1110" y1="693" x2="1226" y2="296" class="arrow"/>
+  <line x1="1370" y1="342" x2="1370" y2="401" class="arrow"/>
+  <line x1="1370" y1="497" x2="1370" y2="556" class="arrow"/>
+  <line x1="1370" y1="652" x2="1370" y2="711" class="arrow"/>
+  <path d="M1230,761 C1010,900 470,900 200,566" class="arrow-green"/>
+
+  <rect x="78" y="885" width="1420" height="64" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5" rx="18"/>
+  <text x="108" y="913" class="box-title">关键边界</text>
+  <text x="230" y="913" class="box-text">AI 员工只调用 Radar MCP；Radar 调用平台 MCP Gateway 或 fallback backend；平台 token 由 MCP Manager 管理，不落到 Radar。</text>
+  <text x="230" y="938" class="small">内容整理、翻译、OCR、分类、发布是下游 AI 员工能力，通过 Radar 读取已采集数据，不重新触发采集。</text>
+</svg>

@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
+from .beeclaw_adapter.platforms import public_raw_payload
 from .models import ContentItem, FetchResult, SourceAccount, utc_now_iso
 
 
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS crawl_failures (
 
 CREATE TABLE IF NOT EXISTS crawl_runs (
     id TEXT PRIMARY KEY,
+    parent_run_id TEXT REFERENCES crawl_runs(id) ON DELETE CASCADE,
     agent_type TEXT NOT NULL DEFAULT 'crawler',
     source_type TEXT NOT NULL,
     platform TEXT,
@@ -107,6 +109,14 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     status TEXT NOT NULL,
     input_label TEXT,
     params_json TEXT NOT NULL DEFAULT '{}',
+    batch_index INTEGER,
+    batch_total INTEGER,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    max_attempts INTEGER NOT NULL DEFAULT 1,
+    next_attempt_at TEXT,
+    locked_at TEXT,
+    locked_by TEXT,
+    last_error TEXT,
     total_accounts INTEGER NOT NULL DEFAULT 0,
     success_count INTEGER NOT NULL DEFAULT 0,
     failure_count INTEGER NOT NULL DEFAULT 0,
@@ -126,6 +136,57 @@ CREATE TABLE IF NOT EXISTS crawl_run_contents (
     content_id INTEGER NOT NULL REFERENCES source_contents(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (run_id, content_id)
+);
+
+CREATE TABLE IF NOT EXISTS media_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_id INTEGER NOT NULL REFERENCES source_contents(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES crawl_runs(id) ON DELETE SET NULL,
+    platform TEXT NOT NULL,
+    provider TEXT,
+    original_content_id TEXT NOT NULL,
+    asset_index INTEGER NOT NULL,
+    media_type TEXT NOT NULL,
+    url TEXT,
+    download_url TEXT,
+    thumbnail_url TEXT,
+    local_path TEXT,
+    local_url TEXT,
+    content_type TEXT,
+    byte_size INTEGER,
+    download_status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at TEXT,
+    raw_asset_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_id, asset_index)
+);
+
+CREATE TABLE IF NOT EXISTS interaction_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_id INTEGER NOT NULL REFERENCES source_contents(id) ON DELETE CASCADE,
+    run_id TEXT REFERENCES crawl_runs(id) ON DELETE SET NULL,
+    platform TEXT NOT NULL,
+    source_url TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    window_score REAL NOT NULL DEFAULT 0,
+    score_reason TEXT,
+    action_type TEXT NOT NULL DEFAULT 'observe',
+    suggested_reply TEXT,
+    suggested_quote TEXT,
+    risk_level TEXT NOT NULL DEFAULT 'normal',
+    risk_reason TEXT,
+    target_channel TEXT NOT NULL DEFAULT '',
+    push_status TEXT NOT NULL DEFAULT 'not_pushed',
+    pushed_at TEXT,
+    push_payload_json TEXT NOT NULL DEFAULT '{}',
+    created_by TEXT,
+    raw_candidate_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(content_id, target_channel, action_type)
 );
 
 CREATE TABLE IF NOT EXISTS crawl_strategies (
@@ -182,6 +243,18 @@ CREATE INDEX IF NOT EXISTS idx_crawl_runs_started_at
 
 CREATE INDEX IF NOT EXISTS idx_crawl_run_contents_content
     ON crawl_run_contents(content_id);
+
+CREATE INDEX IF NOT EXISTS idx_media_assets_content
+    ON media_assets(content_id);
+
+CREATE INDEX IF NOT EXISTS idx_media_assets_status
+    ON media_assets(download_status);
+
+CREATE INDEX IF NOT EXISTS idx_interaction_candidates_status
+    ON interaction_candidates(status, window_score);
+
+CREATE INDEX IF NOT EXISTS idx_interaction_candidates_content
+    ON interaction_candidates(content_id);
 
 CREATE TABLE IF NOT EXISTS app_settings (
     key TEXT PRIMARY KEY,
@@ -251,6 +324,26 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
     }
     if "agent_type" not in run_columns:
         conn.execute("ALTER TABLE crawl_runs ADD COLUMN agent_type TEXT NOT NULL DEFAULT 'crawler'")
+    run_additions = {
+        "parent_run_id": "TEXT REFERENCES crawl_runs(id) ON DELETE CASCADE",
+        "batch_index": "INTEGER",
+        "batch_total": "INTEGER",
+        "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+        "max_attempts": "INTEGER NOT NULL DEFAULT 1",
+        "next_attempt_at": "TEXT",
+        "locked_at": "TEXT",
+        "locked_by": "TEXT",
+        "last_error": "TEXT",
+    }
+    for column, definition in run_additions.items():
+        if column not in run_columns:
+            conn.execute(f"ALTER TABLE crawl_runs ADD COLUMN {column} {definition}")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_crawl_runs_parent
+        ON crawl_runs(parent_run_id, batch_index)
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS crawl_run_contents (
@@ -265,6 +358,87 @@ def ensure_schema_migrations(conn: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS idx_crawl_run_contents_content
         ON crawl_run_contents(content_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS media_assets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_id INTEGER NOT NULL REFERENCES source_contents(id) ON DELETE CASCADE,
+            run_id TEXT REFERENCES crawl_runs(id) ON DELETE SET NULL,
+            platform TEXT NOT NULL,
+            provider TEXT,
+            original_content_id TEXT NOT NULL,
+            asset_index INTEGER NOT NULL,
+            media_type TEXT NOT NULL,
+            url TEXT,
+            download_url TEXT,
+            thumbnail_url TEXT,
+            local_path TEXT,
+            local_url TEXT,
+            content_type TEXT,
+            byte_size INTEGER,
+            download_status TEXT NOT NULL DEFAULT 'pending',
+            error_message TEXT,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at TEXT,
+            raw_asset_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(content_id, asset_index)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_media_assets_content
+        ON media_assets(content_id)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_media_assets_status
+        ON media_assets(download_status)
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS interaction_candidates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            content_id INTEGER NOT NULL REFERENCES source_contents(id) ON DELETE CASCADE,
+            run_id TEXT REFERENCES crawl_runs(id) ON DELETE SET NULL,
+            platform TEXT NOT NULL,
+            source_url TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            window_score REAL NOT NULL DEFAULT 0,
+            score_reason TEXT,
+            action_type TEXT NOT NULL DEFAULT 'observe',
+            suggested_reply TEXT,
+            suggested_quote TEXT,
+            risk_level TEXT NOT NULL DEFAULT 'normal',
+            risk_reason TEXT,
+            target_channel TEXT NOT NULL DEFAULT '',
+            push_status TEXT NOT NULL DEFAULT 'not_pushed',
+            pushed_at TEXT,
+            push_payload_json TEXT NOT NULL DEFAULT '{}',
+            created_by TEXT,
+            raw_candidate_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(content_id, target_channel, action_type)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_interaction_candidates_status
+        ON interaction_candidates(status, window_score)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_interaction_candidates_content
+        ON interaction_candidates(content_id)
         """
     )
     conn.execute(
@@ -304,9 +478,9 @@ DEFAULT_STRATEGIES: tuple[dict, ...] = (
     {
         "id": "x-7d-original-media",
         "name": "X 近 7 天原创带媒体",
-        "description": "生产默认：feedgrab + X MCP，最近 7 天，只保留原创与引用，下载图片和视频。",
+        "description": "默认 auto：按可用性选择 X MCP/API/RSS/browser-session 等通道，最近 7 天，只保留原创与引用，下载图片和视频。",
         "platform": "x",
-        "mode": "feedgrab:x_mcp",
+        "mode": "auto",
         "date_range": "7d",
         "max_results": 20,
         "include_original": 1,
@@ -324,7 +498,7 @@ DEFAULT_STRATEGIES: tuple[dict, ...] = (
         "name": "X 免费 x-rss 情报源",
         "description": "免费兜底：xgo.ing RSS / AI 情报源，不要求 token，适合先跑通文本和图片。",
         "platform": "x",
-        "mode": "x-rss",
+        "mode": "beeclaw:x_rss",
         "date_range": "7d",
         "category": "AI情报源",
         "max_results": 20,
@@ -340,10 +514,10 @@ DEFAULT_STRATEGIES: tuple[dict, ...] = (
     },
     {
         "id": "x-api-xmcp-full-metadata",
-        "name": "X API/XMCP 全量元数据",
-        "description": "付费/正式：优先 feedgrab X MCP/API，保留指标、引用和媒体元数据。",
+        "name": "X 官方 auto 全量元数据",
+        "description": "付费/正式：使用 Beeclaw X auto，优先 X MCP/API，保留指标、引用和媒体元数据。",
         "platform": "x",
-        "mode": "feedgrab:x_mcp",
+        "mode": "beeclaw:x",
         "date_range": "7d",
         "max_results": 50,
         "include_original": 1,
@@ -539,6 +713,79 @@ def qualification_status(account: sqlite3.Row, item: ContentItem) -> str:
     return "qualified"
 
 
+def media_download_status(asset: dict) -> tuple[str, str | None]:
+    if asset.get("local_path"):
+        return "downloaded", None
+    error = asset.get("download_error") or asset.get("error_message")
+    if error:
+        return "failed", str(error)
+    return "pending", None
+
+
+def sync_media_assets(conn: sqlite3.Connection, *, content_id: int, item: ContentItem, provider: str | None, fetched_at: str) -> None:
+    seen_indexes = []
+    for index, asset in enumerate(item.media_assets, start=1):
+        if not isinstance(asset, dict):
+            continue
+        status, error_message = media_download_status(asset)
+        media_type = str(asset.get("type") or item.media_type or "media").lower()
+        seen_indexes.append(index)
+        conn.execute(
+            """
+            INSERT INTO media_assets (
+                content_id, platform, provider, original_content_id, asset_index,
+                media_type, url, download_url, thumbnail_url, local_path, local_url,
+                content_type, byte_size, download_status, error_message, raw_asset_json,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(content_id, asset_index) DO UPDATE SET
+                platform = excluded.platform,
+                provider = excluded.provider,
+                original_content_id = excluded.original_content_id,
+                media_type = excluded.media_type,
+                url = excluded.url,
+                download_url = excluded.download_url,
+                thumbnail_url = excluded.thumbnail_url,
+                local_path = excluded.local_path,
+                local_url = excluded.local_url,
+                content_type = excluded.content_type,
+                byte_size = excluded.byte_size,
+                download_status = excluded.download_status,
+                error_message = excluded.error_message,
+                raw_asset_json = excluded.raw_asset_json,
+                updated_at = excluded.updated_at
+            """,
+            (
+                content_id,
+                item.platform,
+                provider,
+                item.original_content_id,
+                index,
+                media_type,
+                asset.get("url"),
+                asset.get("download_url"),
+                asset.get("thumbnail_url"),
+                asset.get("local_path"),
+                asset.get("local_url"),
+                asset.get("content_type"),
+                asset.get("bytes") or asset.get("byte_size"),
+                status,
+                error_message,
+                json.dumps(asset, ensure_ascii=False, sort_keys=True),
+                fetched_at,
+            ),
+        )
+    if seen_indexes:
+        placeholders = ",".join("?" for _ in seen_indexes)
+        conn.execute(
+            f"DELETE FROM media_assets WHERE content_id = ? AND asset_index NOT IN ({placeholders})",
+            (content_id, *seen_indexes),
+        )
+    else:
+        conn.execute("DELETE FROM media_assets WHERE content_id = ?", (content_id,))
+
+
 def save_fetch_result_with_ids(conn: sqlite3.Connection, result: FetchResult) -> list[int]:
     account = conn.execute("SELECT * FROM source_accounts WHERE id = ?", (result.account_id,)).fetchone()
     if account is None:
@@ -547,6 +794,7 @@ def save_fetch_result_with_ids(conn: sqlite3.Connection, result: FetchResult) ->
     fetched_at = utc_now_iso()
     content_ids: list[int] = []
     for item in result.items:
+        raw_payload = public_raw_payload(item.raw_payload if isinstance(item.raw_payload, dict) else {})
         rate = engagement_rate(item)
         status = qualification_status(account, item)
         conn.execute(
@@ -582,7 +830,7 @@ def save_fetch_result_with_ids(conn: sqlite3.Connection, result: FetchResult) ->
             (
                 result.account_id,
                 item.platform,
-                item.raw_payload.get("source") if isinstance(item.raw_payload, dict) else None,
+                raw_payload.get("source"),
                 item.original_content_id,
                 item.title,
                 item.text,
@@ -599,7 +847,7 @@ def save_fetch_result_with_ids(conn: sqlite3.Connection, result: FetchResult) ->
                 rate,
                 status,
                 fetched_at,
-                json.dumps(item.raw_payload, ensure_ascii=False, sort_keys=True),
+                json.dumps(raw_payload, ensure_ascii=False, sort_keys=True),
                 fetched_at,
             ),
         )
@@ -608,7 +856,9 @@ def save_fetch_result_with_ids(conn: sqlite3.Connection, result: FetchResult) ->
             (item.platform, item.original_content_id),
         ).fetchone()
         if row is not None:
-            content_ids.append(int(row["id"]))
+            content_id = int(row["id"])
+            content_ids.append(content_id)
+            sync_media_assets(conn, content_id=content_id, item=item, provider=raw_payload.get("source"), fetched_at=fetched_at)
 
     conn.execute(
         """
@@ -642,6 +892,12 @@ def link_run_contents(conn: sqlite3.Connection, run_id: str | None, content_ids:
         """,
         rows,
     )
+    placeholders = ",".join("?" for _ in rows)
+    if placeholders:
+        conn.execute(
+            f"UPDATE media_assets SET run_id = ?, updated_at = ? WHERE content_id IN ({placeholders})",
+            (run_id, utc_now_iso(), *[content_id for _, content_id in rows]),
+        )
     conn.commit()
 
 

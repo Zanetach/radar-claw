@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#475569"/>
+    </marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.10"/>
+    </filter>
+    <style>
+      .title { font: 700 34px Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 400 18px Arial, sans-serif; fill: #475569; }
+      .section { font: 700 16px Arial, sans-serif; fill: #334155; }
+      .card-title { font: 700 19px Arial, sans-serif; fill: #0f172a; }
+      .card-text { font: 400 15px Arial, sans-serif; fill: #334155; }
+      .small { font: 400 13px Arial, sans-serif; fill: #64748b; }
+      .num { font: 700 16px Arial, sans-serif; fill: white; }
+      .arrow { stroke: #2563eb; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .arrow-gray { stroke: #475569; stroke-width: 2.4; fill: none; marker-end: url(#arrow-gray); }
+      .dash { stroke: #64748b; stroke-width: 2; stroke-dasharray: 8 6; fill: none; marker-end: url(#arrow-gray); }
+      .card { filter: url(#shadow); rx: 22; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f8fafc"/>
+  <text x="60" y="66" class="title">用户视角：数据采集到展示的完整流程</text>
+  <text x="60" y="100" class="subtitle">用户只和 AI 员工对话；AI 员工调用 Radar 完成采集、存储和结果回传，后续分析与展示基于已沉淀的原始数据继续执行。</text>
+
+  <rect x="60" y="140" width="1480" height="460" fill="#ffffff" stroke="#dbeafe" stroke-width="2" rx="28"/>
+  <text x="88" y="178" class="section">主流程：从需求输入到数据沉淀</text>
+
+  <rect x="90" y="230" width="215" height="155" fill="#eff6ff" stroke="#2563eb" stroke-width="2" class="card"/>
+  <circle cx="118" cy="258" r="16" fill="#2563eb"/><text x="113" y="264" class="num">1</text>
+  <text x="145" y="263" class="card-title">输入采集目标</text>
+  <text x="118" y="302" class="card-text">用户用自然语言描述</text>
+  <text x="118" y="327" class="small">账号 / 关键词 / URL / Excel</text>
+  <text x="118" y="352" class="small">示例：采集 @elonmusk 最近 7 天</text>
+
+  <rect x="340" y="230" width="215" height="155" fill="#eff6ff" stroke="#2563eb" stroke-width="2" class="card"/>
+  <circle cx="368" cy="258" r="16" fill="#2563eb"/><text x="363" y="264" class="num">2</text>
+  <text x="395" y="263" class="card-title">AI 员工理解任务</text>
+  <text x="368" y="302" class="card-text">识别平台、对象、范围</text>
+  <text x="368" y="327" class="small">过滤：原创 / 媒体 / 时间</text>
+  <text x="368" y="352" class="small">必要时确认采集规则</text>
+
+  <rect x="590" y="230" width="215" height="155" fill="#ecfdf5" stroke="#059669" stroke-width="2" class="card"/>
+  <circle cx="618" cy="258" r="16" fill="#059669"/><text x="613" y="264" class="num">3</text>
+  <text x="645" y="263" class="card-title">Radar 执行采集</text>
+  <text x="618" y="302" class="card-text">创建采集任务并执行</text>
+  <text x="618" y="327" class="small">X / 小红书 / RSS / Web 等</text>
+  <text x="618" y="352" class="small">失败会记录原因和 fallback</text>
+
+  <rect x="840" y="230" width="215" height="155" fill="#f8fafc" stroke="#64748b" stroke-width="2" class="card"/>
+  <circle cx="868" cy="258" r="16" fill="#64748b"/><text x="863" y="264" class="num">4</text>
+  <text x="895" y="263" class="card-title">原始数据沉淀</text>
+  <text x="868" y="302" class="card-text">保存真实采集结果</text>
+  <text x="868" y="327" class="small">正文 / 链接 / 指标 / 媒体</text>
+  <text x="868" y="352" class="small">raw payload 和失败记录保留</text>
+
+  <rect x="1090" y="230" width="215" height="155" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2" class="card"/>
+  <circle cx="1118" cy="258" r="16" fill="#7c3aed"/><text x="1113" y="264" class="num">5</text>
+  <text x="1145" y="263" class="card-title">提取与分析</text>
+  <text x="1118" y="302" class="card-text">基于已采集数据处理</text>
+  <text x="1118" y="327" class="small">翻译 / OCR / 分类 / 质量判断</text>
+  <text x="1118" y="352" class="small">可由同一或下游 AI 员工完成</text>
+
+  <rect x="1340" y="230" width="170" height="155" fill="#fff7ed" stroke="#ea580c" stroke-width="2" class="card"/>
+  <circle cx="1368" cy="258" r="16" fill="#ea580c"/><text x="1363" y="264" class="num">6</text>
+  <text x="1395" y="263" class="card-title">展示输出</text>
+  <text x="1368" y="302" class="card-text">结果回到用户</text>
+  <text x="1368" y="327" class="small">AI 回复 / 表格 / 飞书</text>
+  <text x="1368" y="352" class="small">报告 / 整理库 / 内部 APP</text>
+
+  <line x1="305" y1="307" x2="336" y2="307" class="arrow"/>
+  <line x1="555" y1="307" x2="586" y2="307" class="arrow"/>
+  <line x1="805" y1="307" x2="836" y2="307" class="arrow"/>
+  <line x1="1055" y1="307" x2="1086" y2="307" class="arrow"/>
+  <line x1="1305" y1="307" x2="1336" y2="307" class="arrow"/>
+
+  <rect x="90" y="455" width="440" height="88" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" rx="20"/>
+  <text x="120" y="488" class="card-title">用户看到什么</text>
+  <text x="120" y="518" class="card-text">任务 ID、保存条数、失败原因、内容链接、媒体数量、实际 backend、下一步建议。</text>
+
+  <rect x="580" y="455" width="440" height="88" fill="#ecfdf5" stroke="#bbf7d0" stroke-width="1.5" rx="20"/>
+  <text x="610" y="488" class="card-title">Radar 保证什么</text>
+  <text x="610" y="518" class="card-text">原文不丢、链接可追溯、媒体可索引、失败可定位、同一内容可去重。</text>
+
+  <rect x="1070" y="455" width="440" height="88" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="1.5" rx="20"/>
+  <text x="1100" y="488" class="card-title">后续怎么继续</text>
+  <text x="1100" y="518" class="card-text">内容整理 AI 员工读取已采集数据，再做翻译、OCR、分析、发布或推送。</text>
+
+  <rect x="60" y="646" width="1480" height="260" fill="#ffffff" stroke="#e2e8f0" stroke-width="2" rx="28"/>
+  <text x="88" y="684" class="section">用户视角的状态流转</text>
+
+  <rect x="110" y="736" width="210" height="84" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" rx="18"/>
+  <text x="140" y="770" class="card-title">待确认</text>
+  <text x="140" y="797" class="small">规则、平台、范围不清时确认</text>
+
+  <rect x="385" y="736" width="210" height="84" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" rx="18"/>
+  <text x="415" y="770" class="card-title">采集中</text>
+  <text x="415" y="797" class="small">任务执行、分页、下载媒体</text>
+
+  <rect x="660" y="736" width="210" height="84" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" rx="18"/>
+  <text x="690" y="770" class="card-title">已入库</text>
+  <text x="690" y="797" class="small">生成 source_contents / media_assets</text>
+
+  <rect x="935" y="736" width="210" height="84" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" rx="18"/>
+  <text x="965" y="770" class="card-title">可分析</text>
+  <text x="965" y="797" class="small">下游 AI 员工读取数据处理</text>
+
+  <rect x="1210" y="736" width="210" height="84" fill="#f8fafc" stroke="#94a3b8" stroke-width="2" rx="18"/>
+  <text x="1240" y="770" class="card-title">可展示 / 推送</text>
+  <text x="1240" y="797" class="small">报告、飞书、表格、内部系统</text>
+
+  <line x1="320" y1="778" x2="381" y2="778" class="arrow-gray"/>
+  <line x1="595" y1="778" x2="656" y2="778" class="arrow-gray"/>
+  <line x1="870" y1="778" x2="931" y2="778" class="arrow-gray"/>
+  <line x1="1145" y1="778" x2="1206" y2="778" class="arrow-gray"/>
+
+  <text x="88" y="870" class="small">边界说明：Radar v1 内置到“采集、标准化、存储、回传”。提取、分析、展示可以由 AI 员工继续调用 Radar 数据完成，但不应混淆为 Radar 的采集执行职责。</text>
+</svg>

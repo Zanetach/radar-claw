@@ -31,17 +31,32 @@ from .db import (
     upsert_accounts,
 )
 from .import_accounts import load_accounts_from_excel
-from .providers import ProviderError, build_provider, provider_mode_capabilities, webbridge_status
-from .feedgrab_adapter import FeedgrabUnavailable, feedgrab_health, provider_catalog, read_url, unified_content_to_item
-from .feedgrab_adapter.platforms import (
+from .providers import (
+    ProviderError,
+    backend_mcp_call_tool,
+    build_provider,
+    int_or_none,
+    iso_days_ago,
+    media_assets_from_x_payload,
+    media_type_from_assets,
+    normalize_provider_mode,
+    provider_mode_capabilities,
+    webbridge_status,
+)
+from .platform_mcp_gateway import platform_backend_mcp_status, platform_gateway_enabled, platform_mcp_manager_identity
+from .beeclaw_adapter import FeedgrabUnavailable, feedgrab_health, provider_catalog, read_url, unified_content_to_item
+from .beeclaw_adapter.platforms import (
+    beeclaw_execution_backend_name,
+    beeclaw_provider_name,
+    feedgrab_backend_name,
     feedgrab_provider_for_platform,
     infer_feedgrab_platform_from_text,
     infer_feedgrab_platform_from_url,
     normalize_feedgrab_platform,
 )
 from .x_intel import fetch_bestblogs_accounts, upsert_x_intel_accounts
-from .media_downloader import DEFAULT_MEDIA_DIR, download_fetch_result_media
-from .models import FetchResult, utc_now_iso
+from .media_downloader import DEFAULT_MEDIA_DIR, download_fetch_result_media, download_url as download_media_url
+from .models import ContentItem, FetchResult, utc_now_iso
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,7 +69,6 @@ EDITABLE_ACCOUNT_FIELDS = {
     "enabled",
     "fetch_interval_minutes",
 }
-
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict | list) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -116,6 +130,31 @@ def bool_body(body: dict, key: str, default: bool = False) -> bool:
     return bool(body.get(key))
 
 
+def parse_url_batch(value: object) -> list[str]:
+    if value in (None, ""):
+        return []
+    raw_values: list[object]
+    if isinstance(value, list):
+        raw_values = value
+    elif isinstance(value, tuple):
+        raw_values = list(value)
+    else:
+        raw_values = re.split(r"[\n,\s]+", str(value))
+    urls: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_values:
+        url = str(raw or "").strip()
+        if not url:
+            continue
+        if not re.match(r"^https?://", url, flags=re.I):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
 def compact_media_assets(media_assets_json: str | None) -> list[dict]:
     if not media_assets_json:
         return []
@@ -134,6 +173,70 @@ def safe_json(value: str | None) -> dict:
     except json.JSONDecodeError:
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def dedupe_dict_list(items: list[dict]) -> list[dict]:
+    deduped = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def rss_feed_entry_items(content: object, aggregate_item: ContentItem, *, provider_route: str) -> list[ContentItem] | None:
+    if aggregate_item.platform != "rss" or not isinstance(content, dict):
+        return None
+    extra = content.get("extra") if isinstance(content.get("extra"), dict) else {}
+    entries = extra.get("items")
+    if not isinstance(entries, list) or not entries:
+        return None
+    feed_url = str(extra.get("feed_url") or aggregate_item.url or content.get("url") or "").strip()
+    feed_link = str(extra.get("feed_link") or "").strip()
+    provider_backend = extra.get("provider_backend") or aggregate_item.raw_payload.get("provider_backend") or "rss_parser"
+    backend_attempts = extra.get("backend_attempts") or aggregate_item.raw_payload.get("backend_attempts")
+    items: list[ContentItem] = []
+    for index, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            continue
+        media_assets = [dict(asset) for asset in entry.get("media_assets") or [] if isinstance(asset, dict)]
+        entry_url = str(entry.get("url") or feed_url or feed_link or "").strip()
+        entry_id = str(entry.get("id") or entry_url or f"{feed_url}#entry-{index}").strip()
+        title = str(entry.get("title") or entry_url or entry_id).strip()
+        summary = str(entry.get("summary") or "").strip()
+        raw_payload = {
+            "source": provider_route,
+            "provider_backend": provider_backend,
+            "backend_attempts": backend_attempts,
+            "feed_url": feed_url,
+            "feed_link": feed_link,
+            "feed_title": aggregate_item.title,
+            "rss_entry": entry,
+        }
+        items.append(
+            ContentItem(
+                platform="rss",
+                original_content_id=entry_id,
+                title=title,
+                text=summary or title,
+                published_at=entry.get("published_at"),
+                url=entry_url or feed_url,
+                view_count=None,
+                like_count=None,
+                comment_count=None,
+                share_count=None,
+                media_type=media_type_from_assets("text", media_assets),
+                language=None,
+                raw_payload=raw_payload,
+                media_assets=media_assets,
+            )
+        )
+    return items or None
 
 
 def camel_bool(value: object) -> bool:
@@ -266,6 +369,24 @@ def infer_platform_from_url(url: str) -> str:
     return feedgrab_platform
 
 
+def x_profile_handle_from_url(url: str) -> str | None:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host not in {"x.com", "twitter.com"} and not host.endswith(".x.com") and not host.endswith(".twitter.com"):
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 1:
+        return None
+    handle = parts[0].lstrip("@")
+    if handle.lower() in {"home", "explore", "notifications", "messages", "i", "search", "settings"}:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
+        return None
+    return handle
+
+
 def infer_platform_from_prompt(prompt: str, lower: str, urls: list[str]) -> str:
     feedgrab_platform = infer_feedgrab_platform_from_text(prompt)
     if feedgrab_platform:
@@ -319,6 +440,44 @@ def search_feedgrab_xhs_keyword(*, keyword: str, sort: str, note_type: str, max_
         save_notes=False,
         skip_summary=True,
     )
+
+
+def search_xhs_mcp_keyword(*, keyword: str, sort: str, note_type: str, max_results: int) -> dict:
+    server_url = os.getenv("XHS_MCP_SERVER_URL") or os.getenv("XIAOHONGSHU_MCP_SERVER_URL")
+    if not server_url:
+        if platform_gateway_enabled():
+            server_url = "platform://xiaohongshu-mcp"
+        else:
+            raise ProviderError("XHS MCP server URL is not configured", error_type="xhs_mcp_unavailable")
+    tool_name = os.getenv("XHS_MCP_SEARCH_TOOL", "search_notes")
+    payload = backend_mcp_call_tool(
+        integration="xiaohongshu-mcp",
+        server_url=server_url,
+        tool_name=tool_name,
+        arguments={
+            "keyword": keyword,
+            "query": keyword,
+            "sort": sort,
+            "note_type": note_type,
+            "max_results": max_results,
+        },
+    )
+    payload["_provider_backend"] = f"xiaohongshu-mcp:{tool_name}"
+    return payload
+
+
+def search_beeclaw_xhs_keyword(*, keyword: str, sort: str, note_type: str, max_results: int) -> dict:
+    try:
+        return search_xhs_mcp_keyword(keyword=keyword, sort=sort, note_type=note_type, max_results=max_results)
+    except Exception as xhs_mcp_exc:
+        payload = search_feedgrab_xhs_keyword(keyword=keyword, sort=sort, note_type=note_type, max_results=max_results)
+        payload["_provider_backend"] = "feedgrab:xhs_search"
+        payload["_fallback_from"] = {
+            "provider": "xiaohongshu-mcp",
+            "error": type(xhs_mcp_exc).__name__,
+            "message": str(xhs_mcp_exc),
+        }
+        return payload
 
 
 def xhs_note_to_item(note: dict, *, query: str) -> object:
@@ -389,13 +548,13 @@ def parse_chat_prompt(text: str) -> dict:
     if "最近一周" in prompt or "7天" in prompt or "7 天" in prompt:
         date_range = "7d"
 
-    mode = "auto" if platform == "x" else "feedgrab"
+    mode = "auto" if platform == "x" else "beeclaw"
     if "rss" in lower or "免费" in prompt:
-        mode = "feedgrab:x_rss"
+        mode = "beeclaw:x_rss"
     elif "api" in lower:
         mode = "api"
-    elif "xmcp" in lower or "mcp" in lower or "生产" in prompt:
-        mode = "feedgrab:x_mcp" if platform == "x" else "feedgrab"
+    elif "xmcp" in lower or "mcp" in lower:
+        mode = "beeclaw:x_mcp" if platform == "x" else "beeclaw"
     elif "chrome" in lower or "浏览器" in prompt or "browser" in lower:
         mode = "chrome-session"
 
@@ -462,7 +621,7 @@ def source_url_required_message(task: dict) -> str:
     platform = task.get("platform") or "该平台"
     source_type = task.get("sourceType") or "任务"
     return (
-        f"{platform} 当前只接入 feedgrab URL/content 采集，"
+        f"{platform} 当前只接入 Beeclaw URL/content 采集，"
         f"尚未接入 {source_type} 深度采集。请提供具体内容链接或主页链接后再采集。"
     )
 
@@ -577,6 +736,181 @@ def sync_xmcp_env(root_env: Path, xmcp_env: Path) -> None:
     write_env_values(xmcp_env, updates)
 
 
+RADAR_MCP_TOOL_ALLOWLIST = [
+    "radar_agent_collect",
+    "radar_create_collection_task",
+    "radar_get_collection_task",
+    "radar_list_raw_contents",
+    "radar_get_raw_content_detail",
+    "radar_list_media_assets",
+    "radar_export_raw_dataset",
+    "radar_handoff_to_interaction_agent",
+    "radar_save_interaction_candidates",
+    "radar_list_interaction_candidates",
+    "radar_export_interaction_candidates",
+    "radar_check_provider_health",
+    "radar_xmcp_pressure_test",
+]
+
+X_MCP_DEFAULT_ALLOWLIST = [
+    "getUsersByUsername",
+    "getUsersPosts",
+    "getUsersIdPosts",
+    "getPosts",
+    "searchPostsRecent",
+    "getPostsById",
+    "getPostsByIds",
+    "getUsage",
+]
+
+
+def merged_env_values(*paths: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for path in paths:
+        values.update(read_env_file(path))
+    values.update({key: value for key, value in os.environ.items() if value})
+    return values
+
+
+def probe_mcp_endpoint(url: str) -> dict[str, object]:
+    try:
+        request = Request(
+            url,
+            headers={"Accept": "application/json,text/event-stream"},
+            method="GET",
+        )
+        opener = build_opener(ProxyHandler({}))
+        with opener.open(request, timeout=2) as response:
+            return {"url": url, "reachable": response.status < 500, "message": f"HTTP {response.status}"}
+    except HTTPError as exc:
+        return {"url": url, "reachable": exc.code < 500, "message": f"HTTP {exc.code}"}
+    except Exception as exc:
+        return {"url": url, "reachable": False, "message": str(exc)}
+
+
+def x_mcp_integration_status(probe: dict[str, object], secret_status: dict[str, bool]) -> str:
+    message = str(probe.get("message") or "").lower()
+    if "402" in message or "credit" in message or "credits" in message:
+        return "credits_low"
+    if "401" in message or "403" in message:
+        return "auth_failed"
+    if not any(secret_status.values()):
+        return "auth_failed"
+    if probe.get("reachable"):
+        return "connected"
+    return "unavailable"
+
+
+def mcp_integrations_catalog() -> dict[str, object]:
+    env_values = merged_env_values(ROOT / ".env", ROOT / "tools" / "xmcp" / ".env", ROOT / ".external" / "xmcp" / ".env")
+    radar_mcp_path = ROOT / "tools" / "radar_mcp_server.py"
+    radar_base_url = env_values.get("RADAR_BASE_URL") or "http://radar-api:8780"
+    gateway_x_status = platform_backend_mcp_status("x-mcp")
+    gateway_xhs_status = platform_backend_mcp_status("xiaohongshu-mcp")
+    use_platform_gateway = bool(gateway_x_status.get("enabled"))
+    xmcp_url = env_values.get("X_MCP_SERVER_URL") or env_values.get("XMCP_SERVER_URL") or "http://x-mcp:8000/mcp"
+    xhs_mcp_url = env_values.get("XHS_MCP_SERVER_URL") or env_values.get("XIAOHONGSHU_MCP_SERVER_URL") or "http://xhs-mcp:18060/mcp"
+    allowlist_value = env_values.get("X_API_TOOL_ALLOWLIST") or ",".join(X_MCP_DEFAULT_ALLOWLIST)
+    xhs_allowlist_value = env_values.get("XHS_MCP_TOOL_ALLOWLIST") or "search_notes,get_note,get_user_notes"
+    x_secret_status = {
+        "X_BEARER_TOKEN": bool(env_values.get("X_BEARER_TOKEN")),
+        "X_OAUTH_CONSUMER_KEY": bool(env_values.get("X_OAUTH_CONSUMER_KEY") or env_values.get("X_API_KEY")),
+        "X_OAUTH_CONSUMER_SECRET": bool(env_values.get("X_OAUTH_CONSUMER_SECRET") or env_values.get("X_API_SECRET")),
+    }
+    xhs_secret_status = {
+        "XHS_MCP_TOKEN": bool(env_values.get("XHS_MCP_TOKEN") or env_values.get("XIAOHONGSHU_MCP_TOKEN")),
+        "XHS_COOKIE": bool(env_values.get("XHS_COOKIE") or env_values.get("XIAOHONGSHU_COOKIE")),
+    }
+    xmcp_probe = probe_mcp_endpoint(xmcp_url)
+    xhs_probe = probe_mcp_endpoint(xhs_mcp_url)
+    x_status = str(gateway_x_status.get("status")) if use_platform_gateway else x_mcp_integration_status(xmcp_probe, x_secret_status)
+    xhs_status = str(gateway_xhs_status.get("status")) if use_platform_gateway else ("connected" if xhs_probe.get("reachable") else "unavailable")
+    manager_identity = platform_mcp_manager_identity()
+    manager = {
+        "name": manager_identity["name"],
+        "displayName": manager_identity["displayName"],
+        "type": "control_plane",
+        "role": "Platform MCP management and gateway",
+        "status": "connected" if use_platform_gateway and gateway_x_status.get("urlConfigured") else "local_direct_mode",
+        "managedBy": manager_identity["managedBy"],
+        "defaultAgentBinding": False,
+        "bindToAiEmployeeByDefault": False,
+        "responsibilities": [
+            "backend MCP registry",
+            "deployment",
+            "secret/session management",
+            "tool allowlist",
+            "health checks",
+            "server-side MCP tool invocation",
+        ],
+        "gateway": gateway_x_status,
+        "notes": "这是平台 MCP 管理功能，不属于 Radar。Radar 只作为采集工具调用 Manager/Gateway 授权的 backend MCP。",
+    }
+    integrations = [
+        {
+            "name": "radar",
+            "displayName": "Radar MCP",
+            "type": "agent_tool",
+            "role": "AI employee business tool",
+            "status": "connected" if radar_mcp_path.exists() else "unavailable",
+            "defaultAgentBinding": True,
+            "bindToAiEmployeeByDefault": True,
+            "exposesRawPlatformTools": False,
+            "command": "python3",
+            "args": [str(radar_mcp_path)],
+            "env": {"RADAR_BASE_URL": radar_base_url},
+            "toolAllowlist": RADAR_MCP_TOOL_ALLOWLIST,
+            "usedBy": ["数据采集 AI 员工"],
+            "notes": "AI 员工默认绑定 Radar MCP，由 Radar 负责任务、入库、媒体、去重和 agent_feedback。",
+        },
+        {
+            "name": "x-mcp",
+            "displayName": "X MCP",
+            "type": "backend",
+            "role": "Platform Backend MCP",
+            "status": x_status,
+            "managedBy": manager_identity["managedBy"],
+            "invocationMode": "platform_gateway" if use_platform_gateway else "direct_mcp_endpoint",
+            "defaultAgentBinding": False,
+            "bindToAiEmployeeByDefault": False,
+            "exposesRawPlatformTools": True,
+            "endpoint": "platform://mcp/x-mcp" if use_platform_gateway else xmcp_url,
+            "reachable": bool(gateway_x_status.get("urlConfigured")) if use_platform_gateway else bool(xmcp_probe.get("reachable")),
+            "message": manager_identity["message"] if use_platform_gateway else xmcp_probe.get("message"),
+            "toolAllowlist": [item.strip() for item in allowlist_value.split(",") if item.strip()],
+            "secretStatus": x_secret_status,
+            "secretValuesExposed": False,
+            "safeReadOnly": True,
+            "usedBy": ["Radar / Beeclaw X provider"],
+            "gateway": gateway_x_status,
+            "notes": "X MCP 在平台 MCP Manager 中可见、可测试、可管理；Radar 通过平台 Manager/Gateway 间接调用，不保存平台 token。",
+        },
+        {
+            "name": "xiaohongshu-mcp",
+            "displayName": "小红书 MCP",
+            "type": "backend",
+            "role": "Platform Backend MCP",
+            "status": xhs_status,
+            "managedBy": manager_identity["managedBy"],
+            "invocationMode": "platform_gateway" if use_platform_gateway else "direct_mcp_endpoint",
+            "defaultAgentBinding": False,
+            "bindToAiEmployeeByDefault": False,
+            "exposesRawPlatformTools": True,
+            "endpoint": "platform://mcp/xiaohongshu-mcp" if use_platform_gateway else xhs_mcp_url,
+            "reachable": bool(gateway_xhs_status.get("urlConfigured")) if use_platform_gateway else bool(xhs_probe.get("reachable")),
+            "message": manager_identity["message"] if use_platform_gateway else xhs_probe.get("message"),
+            "toolAllowlist": [item.strip() for item in xhs_allowlist_value.split(",") if item.strip()],
+            "secretStatus": xhs_secret_status,
+            "secretValuesExposed": False,
+            "safeReadOnly": True,
+            "usedBy": ["Radar / Beeclaw XHS provider"],
+            "gateway": gateway_xhs_status,
+            "notes": "小红书 MCP 由平台 MCP Manager 统一管理；Radar 通过 beeclaw:xhs provider 调用它完成关键词/笔记采集。",
+        },
+    ]
+    return {"manager": manager, "items": integrations}
+
+
 class RadarAdminHandler(BaseHTTPRequestHandler):
     db_path: Path = DEFAULT_DB
     excel_path: Path = DEFAULT_EXCEL
@@ -648,6 +982,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "service": "radar-api",
                 "entrypoint": "ai-agent",
                 "mcp_server": "tools/radar_mcp_server.py",
+                "mcp_integrations": "/api/mcp/integrations",
                 "health": "/api/summary",
                 "diagnostics": "/api/config/diagnostics",
             },
@@ -678,6 +1013,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "/api/failures": self.api_failures,
             "/api/config": self.api_config,
             "/api/config/diagnostics": self.api_config_diagnostics,
+            "/api/mcp/integrations": self.api_mcp_integrations,
+            "/api/production-readiness": self.api_production_readiness,
             "/api/providers": self.api_providers,
             "/api/providers/health": self.api_providers_health,
             "/api/runs": self.api_runs,
@@ -687,6 +1024,10 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "/api/collection-tasks": self.api_runs,
             "/api/raw-contents": self.api_contents,
             "/api/raw-contents/export": self.api_export_raw_dataset,
+            "/api/media-assets/export": self.api_export_media_assets,
+            "/api/media-assets": self.api_media_assets,
+            "/api/interaction-candidates": self.api_interaction_candidates,
+            "/api/interaction-candidates/export": self.api_export_interaction_candidates,
         }
         handler = handlers.get(path)
         if handler is None and path.startswith("/api/contents/"):
@@ -736,6 +1077,9 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         if path == "/api/collection-tasks":
             json_response(self, HTTPStatus.OK, self.api_create_collection_task(self.read_json()))
             return
+        if path == "/api/providers/xmcp/pressure-test":
+            json_response(self, HTTPStatus.OK, self.api_xmcp_pressure_test(self.read_json()))
+            return
         if path == "/api/employee-tasks":
             json_response(self, HTTPStatus.OK, self.api_create_employee_task(self.read_json()))
             return
@@ -767,6 +1111,15 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         if path in {"/api/raw-contents/handoff/organizer", "/api/raw-contents/handoff/beemax"}:
             json_response(self, HTTPStatus.OK, self.api_handoff_to_organizer(self.read_json()))
             return
+        if path == "/api/raw-contents/handoff/interaction":
+            json_response(self, HTTPStatus.OK, self.api_handoff_to_interaction_agent(self.read_json()))
+            return
+        if path == "/api/interaction-candidates":
+            json_response(self, HTTPStatus.OK, self.api_save_interaction_candidates(self.read_json()))
+            return
+        if path == "/api/interaction-candidates/push":
+            json_response(self, HTTPStatus.OK, self.api_push_interaction_candidates(self.read_json()))
+            return
         if path.startswith("/api/runs/") and path.endswith("/status"):
             run_id = path.removeprefix("/api/runs/").removesuffix("/status").strip("/")
             if run_id:
@@ -775,7 +1128,15 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/runs/") and path.endswith("/retry"):
             run_id = path.removeprefix("/api/runs/").removesuffix("/retry").strip("/")
             if run_id:
-                json_response(self, HTTPStatus.OK, self.api_run_retry(run_id))
+                json_response(self, HTTPStatus.OK, self.api_run_retry(run_id, self.read_json()))
+                return
+        if path == "/api/media-assets/retry":
+            json_response(self, HTTPStatus.OK, self.api_media_assets_retry(self.read_json()))
+            return
+        if path.startswith("/api/media-assets/") and path.endswith("/retry"):
+            media_id = path.removeprefix("/api/media-assets/").removesuffix("/retry").strip("/")
+            if media_id.isdigit():
+                json_response(self, HTTPStatus.OK, self.api_media_asset_retry(int(media_id), self.read_json()))
                 return
         if path == "/api/config":
             json_response(self, HTTPStatus.OK, self.api_save_config(self.read_json()))
@@ -1053,13 +1414,159 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         item["markdown_preview"] = item.get("organized_markdown") or content_markdown(item)
         return item
 
+    def api_media_assets(self, query: dict[str, list[str]]) -> dict:
+        limit = parse_int((query.get("limit") or ["100"])[0], 100) or 100
+        content_id = parse_int((query.get("contentId") or query.get("content_id") or [""])[0], None)
+        run_id = (query.get("runId") or query.get("run_id") or [""])[0]
+        status = (query.get("status") or [""])[0]
+        conn = self.conn()
+        sql = """
+            SELECT m.*, c.title, c.url AS source_url
+            FROM media_assets m
+            JOIN source_contents c ON c.id = m.content_id
+            WHERE 1 = 1
+        """
+        params: list[object] = []
+        if content_id is not None:
+            sql += " AND m.content_id = ?"
+            params.append(content_id)
+        if run_id:
+            sql += " AND m.run_id = ?"
+            params.append(run_id)
+        if status:
+            sql += " AND m.download_status = ?"
+            params.append(status)
+        sql += " ORDER BY m.updated_at DESC, m.id DESC LIMIT ?"
+        params.append(limit)
+        rows = rows_to_dicts(conn.execute(sql, params))
+        for row in rows:
+            row["raw_asset"] = safe_json(row.pop("raw_asset_json", "{}"))
+        return {"count": len(rows), "items": rows}
+
+    def api_export_media_assets(self, query: dict[str, list[str]]) -> dict:
+        output_format = (query.get("format") or ["json"])[0].lower()
+        assets = self.api_media_assets(query)["items"]
+        if output_format == "jsonl":
+            return {
+                "count": len(assets),
+                "format": "jsonl",
+                "dataset_jsonl": "\n".join(json.dumps(asset, ensure_ascii=False, sort_keys=True) for asset in assets),
+            }
+        if output_format == "markdown":
+            lines = ["# Radar 媒体资产清单", ""]
+            for asset in assets:
+                lines.extend(
+                    [
+                        f"## 媒体 {asset.get('id')}",
+                        f"- 类型: {asset.get('media_type')}",
+                        f"- 状态: {asset.get('download_status')}",
+                        f"- 来源内容: {asset.get('source_url') or '-'}",
+                        f"- 原始地址: {asset.get('download_url') or asset.get('url') or '-'}",
+                        f"- 本地路径: {asset.get('local_path') or '-'}",
+                        "",
+                    ]
+                )
+            return {"count": len(assets), "format": "markdown", "dataset_markdown": "\n".join(lines)}
+        return {"count": len(assets), "format": "json", "items": assets}
+
+    def api_media_asset_retry(self, media_id: int, body: dict) -> dict:
+        conn = self.conn()
+        row = conn.execute("SELECT * FROM media_assets WHERE id = ?", (media_id,)).fetchone()
+        if row is None:
+            return {"error": "not_found"}
+        source_url = row["download_url"] or row["url"]
+        now = utc_now_iso()
+        if not source_url or not str(source_url).startswith(("http://", "https://")):
+            conn.execute(
+                """
+                UPDATE media_assets
+                SET download_status = 'failed', error_message = ?, retry_count = retry_count + 1,
+                    last_attempt_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                ("missing_download_url", now, now, media_id),
+            )
+            conn.commit()
+            return dict(conn.execute("SELECT * FROM media_assets WHERE id = ?", (media_id,)).fetchone())
+        media_root = Path(body.get("mediaDir") or DEFAULT_MEDIA_DIR)
+        target = media_root / row["platform"] / str(row["content_id"]) / f"asset-{media_id}"
+        try:
+            local = download_media_url(str(source_url), target)
+            raw_asset = safe_json(row["raw_asset_json"])
+            raw_asset.update(local)
+            conn.execute(
+                """
+                UPDATE media_assets
+                SET local_path = ?, local_url = ?, content_type = ?, byte_size = ?,
+                    download_status = 'downloaded', error_message = NULL,
+                    retry_count = retry_count + 1, last_attempt_at = ?, raw_asset_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    local.get("local_path"),
+                    local.get("local_url"),
+                    local.get("content_type"),
+                    local.get("bytes"),
+                    now,
+                    json.dumps(raw_asset, ensure_ascii=False, sort_keys=True),
+                    now,
+                    media_id,
+                ),
+            )
+        except Exception as exc:
+            conn.execute(
+                """
+                UPDATE media_assets
+                SET download_status = 'failed', error_message = ?, retry_count = retry_count + 1,
+                    last_attempt_at = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (str(exc), now, now, media_id),
+            )
+        conn.commit()
+        return dict(conn.execute("SELECT * FROM media_assets WHERE id = ?", (media_id,)).fetchone())
+
+    def api_media_assets_retry(self, body: dict) -> dict:
+        query: dict[str, list[str]] = {}
+        for body_key, query_key in {
+            "contentId": "contentId",
+            "content_id": "contentId",
+            "runId": "runId",
+            "run_id": "runId",
+            "status": "status",
+            "limit": "limit",
+        }.items():
+            if body.get(body_key) not in (None, ""):
+                query[query_key] = [str(body[body_key])]
+        if "status" not in query:
+            query["status"] = ["failed"]
+        assets = self.api_media_assets(query)["items"]
+        results = []
+        downloaded = 0
+        failed = 0
+        for asset in assets:
+            result = self.api_media_asset_retry(int(asset["id"]), body)
+            results.append(result)
+            if result.get("download_status") == "downloaded":
+                downloaded += 1
+            elif result.get("download_status") == "failed":
+                failed += 1
+        return {
+            "attempted": len(results),
+            "downloaded": downloaded,
+            "failed": failed,
+            "items": results,
+        }
+
     def raw_content_contract_item(self, row: dict) -> dict:
         raw_payload = safe_json(row.get("raw_payload_json"))
+        provider = beeclaw_provider_name(row.get("provider") or raw_payload.get("source"))
         return {
             "content_id": row["id"],
             "platform": row["platform"],
-            "provider": row.get("provider") or raw_payload.get("source"),
-            "execution_backend": raw_payload.get("provider_backend") or raw_payload.get("execution_backend"),
+            "provider": provider,
+            "execution_backend": beeclaw_execution_backend_name(raw_payload.get("provider_backend") or raw_payload.get("execution_backend")),
             "source_account": row.get("account_name"),
             "category": row.get("category"),
             "radar_name": row.get("radar_name"),
@@ -1272,7 +1779,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "chromeSession": chrome_session,
             "webbridge": chrome_session,
             "providerModes": provider_mode_capabilities(),
-            "feedgrab": feedgrab_health(),
+            "beeclaw": feedgrab_health(),
+            "mcpIntegrations": mcp_integrations_catalog()["items"],
             "strategies": strategies,
         }
 
@@ -1324,7 +1832,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "chromeSession": chrome_session,
             "webbridge": chrome_session,
             "providerModes": provider_mode_capabilities(),
-            "feedgrab": feedgrab_health(),
+            "beeclaw": feedgrab_health(),
+            "mcpIntegrations": mcp_integrations_catalog()["items"],
         }
 
     def api_providers(self, query: dict[str, list[str]]) -> dict:
@@ -1339,12 +1848,337 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         diagnostics = self.api_config_diagnostics({})
         return {
             **health,
+            "mcpIntegrations": mcp_integrations_catalog()["items"],
             "radar": {
                 "providerModes": diagnostics.get("providerModes", {}),
                 "media": diagnostics.get("media", {}),
                 "hermes": diagnostics.get("hermes", {}),
             },
         }
+
+    def api_production_readiness(self, query: dict[str, list[str]]) -> dict:
+        """Summarize the six production gaps as actionable readiness checks.
+
+        This endpoint intentionally reports project-side readiness separately
+        from external production validation. It must not expose platform
+        secrets or raw tokens.
+        """
+        conn = self.conn()
+        integrations = mcp_integrations_catalog()
+        manager = integrations.get("manager") or {}
+        gateway = manager.get("gateway") if isinstance(manager.get("gateway"), dict) else {}
+        items_by_name = {
+            str(item.get("name")): item
+            for item in integrations.get("items", [])
+            if isinstance(item, dict)
+        }
+        x_mcp = items_by_name.get("x-mcp", {})
+        xhs_mcp = items_by_name.get("xiaohongshu-mcp", {})
+        health = feedgrab_health()
+        backend_health = health.get("backend_health") if isinstance(health.get("backend_health"), dict) else {}
+        providers = health.get("providers") if isinstance(health.get("providers"), list) else []
+
+        run_counts = {
+            row["status"]: int(row["count"])
+            for row in conn.execute("SELECT status, COUNT(*) AS count FROM crawl_runs GROUP BY status")
+        }
+        media_counts = {
+            row["download_status"]: int(row["count"])
+            for row in conn.execute("SELECT download_status, COUNT(*) AS count FROM media_assets GROUP BY download_status")
+        }
+        content_count = int(conn.execute("SELECT COUNT(*) FROM source_contents").fetchone()[0])
+        latest_run_row = conn.execute(
+            "SELECT * FROM crawl_runs ORDER BY created_at DESC, started_at DESC LIMIT 1"
+        ).fetchone()
+        latest_feedback = None
+        if latest_run_row is not None:
+            latest_feedback = self.agent_feedback_for_run(self.hydrate_run(dict(latest_run_row)))
+
+        gateway_configured = bool(
+            gateway.get("enabled")
+            and gateway.get("urlConfigured")
+            and (gateway.get("runtimeTokenConfigured") or gateway.get("status") == "connected")
+        )
+        x_mcp_connected = x_mcp.get("status") == "connected"
+        x_mcp_has_secret = bool(
+            isinstance(x_mcp.get("secretStatus"), dict)
+            and any(bool(value) for value in x_mcp["secretStatus"].values())
+        )
+        x_platform_project_ready = x_mcp_connected or x_mcp_has_secret or bool(os.getenv("X_BEARER_TOKEN"))
+        deep_provider_platforms = sorted(
+            {
+                str(item.get("platform"))
+                for item in providers
+                if item.get("provider", "").startswith("beeclaw:")
+            }
+        )
+        executable_backends = sorted(
+            name
+            for name, status in backend_health.items()
+            if isinstance(status, dict) and status.get("installed")
+        )
+
+        checks = [
+            {
+                "id": "platform_mcp_gateway",
+                "title": "Platform MCP Gateway 统一调用 backend MCP",
+                "status": "ready_for_platform_validation" if gateway_configured else "requires_platform_gateway_config",
+                "projectSide": "implemented",
+                "externalDependency": "千蜂平台需注入 MCP Gateway URL、workspace、runtime identity，并把 X MCP / 小红书 MCP 注册到 Manager。",
+                "evidence": {
+                    "manager": manager.get("name"),
+                    "managerStatus": manager.get("status"),
+                    "gateway": gateway,
+                    "xMcpStatus": x_mcp.get("status"),
+                    "xhsMcpStatus": xhs_mcp.get("status"),
+                },
+                "nextActions": [
+                    "在千蜂平台 MCP Manager 中配置 backend MCP。",
+                    "为 Radar 服务注入 PLATFORM_MCP_GATEWAY_URL 或 MCP_GATEWAY_URL。",
+                    "设置 RADAR_BACKEND_MCP_MODE=platform_gateway 后跑 gateway mock 和真实调用验证。",
+                ],
+            },
+            {
+                "id": "x_mcp_production_pressure",
+                "title": "X MCP 真实生产压测",
+                "status": "ready_for_bounded_pressure_test" if x_platform_project_ready else "requires_x_mcp_or_token",
+                "projectSide": "implemented",
+                "externalDependency": "需要真实 X MCP credentials、X API credits、生产 allowlist 和小批量账号。",
+                "evidence": {
+                    "xMcpStatus": x_mcp.get("status"),
+                    "xSecretConfigured": x_mcp_has_secret,
+                    "pressureTestEndpoint": "/api/providers/xmcp/pressure-test",
+                    "creditsGuard": "execute=false 先估算；execute=true 创建受控 queued batch。",
+                },
+                "nextActions": [
+                    "先调用 radar_xmcp_pressure_test execute=false 估算 API 调用量。",
+                    "确认 credits 后用 execute=true 跑 2-5 个账号小批量。",
+                    "检查 backend_attempts、rate limit、media metadata 和失败重试表现。",
+                ],
+            },
+            {
+                "id": "deep_platform_providers",
+                "title": "小红书、YouTube、Reddit 等深度 provider",
+                "status": "partial",
+                "projectSide": "provider_framework_ready",
+                "externalDependency": "部分平台需要 MCP、CLI、API 凭证、登录态或平台级采集策略。",
+                "evidence": {
+                    "registeredPlatforms": deep_provider_platforms,
+                    "executableBackends": executable_backends,
+                    "xhsMcpStatus": xhs_mcp.get("status"),
+                },
+                "nextActions": [
+                    "按平台补齐账号级和关键词级 provider。",
+                    "优先验收 YouTube、RSS/Web、小红书、微信公众号、B站/抖音/微博、Reddit/Telegram。",
+                    "每个平台记录 provider=beeclaw:<platform> 和 execution_backend。",
+                ],
+            },
+            {
+                "id": "large_task_queue_worker",
+                "title": "大任务队列化和 worker 长任务调度",
+                "status": "implemented_with_cooperative_cancel",
+                "projectSide": "implemented",
+                "externalDependency": "生产部署需要常驻 worker 进程、进程监管、并发和限速配置。",
+                "evidence": {
+                    "runCounts": run_counts,
+                    "workerModule": "python3 -m crawler worker",
+                    "supports": ["queued", "running", "paused", "cancelled", "retry", "max_attempts", "next_attempt_at"],
+                },
+                "nextActions": [
+                    "生产环境启动常驻 worker。",
+                    "按平台设置并发、限速和最大重试次数。",
+                    "如需强制中断单个阻塞 provider 调用，增加子进程隔离执行器。",
+                ],
+            },
+            {
+                "id": "media_assets_production",
+                "title": "media_assets 表生产化",
+                "status": "implemented_local_storage_object_sync_pending",
+                "projectSide": "implemented",
+                "externalDependency": "对象存储需要生产 bucket、签名上传、权限和 CDN/访问策略。",
+                "evidence": {
+                    "mediaCounts": media_counts,
+                    "apis": [
+                        "GET /api/media-assets",
+                        "POST /api/media-assets/{id}/retry",
+                        "POST /api/media-assets/retry",
+                        "GET /api/media-assets/export",
+                    ],
+                },
+                "nextActions": [
+                    "接入对象存储同步字段和上传 worker。",
+                    "失败媒体通过 retry 接口批量重试。",
+                    "用 manifest 导出对接下游存储或整理系统。",
+                ],
+            },
+            {
+                "id": "agent_feedback_standardization",
+                "title": "Agent feedback 标准化",
+                "status": "implemented",
+                "projectSide": "implemented",
+                "externalDependency": "AI 员工 prompt/Skill 需强制使用 agent_feedback.message 和 next_actions，不自行编造结果。",
+                "evidence": {
+                    "contentCount": content_count,
+                    "latestFeedbackKeys": sorted(latest_feedback.keys()) if isinstance(latest_feedback, dict) else [],
+                    "fields": [
+                        "message",
+                        "summary",
+                        "content_ids",
+                        "top_contents",
+                        "backend_attempts",
+                        "warnings",
+                        "next_actions",
+                        "report_markdown",
+                    ],
+                },
+                "nextActions": [
+                    "AI 员工回复用户时优先使用 agent_feedback.message。",
+                    "需要整理时使用 next_actions 中的 organizer handoff。",
+                    "不要在 Agent 侧自行推断保存数量、backend 或成功状态。",
+                ],
+            },
+        ]
+        blocking = [item for item in checks if str(item["status"]).startswith("requires_")]
+        partial = [item for item in checks if item["status"] in {"partial", "ready_for_platform_validation", "ready_for_bounded_pressure_test"}]
+        if blocking:
+            overall_status = "requires_external_configuration"
+        elif partial:
+            overall_status = "project_ready_requires_production_validation"
+        else:
+            overall_status = "production_ready"
+        return {
+            "overallStatus": overall_status,
+            "generatedAt": utc_now_iso(),
+            "summary": {
+                "totalChecks": len(checks),
+                "blocking": len(blocking),
+                "partialOrNeedsValidation": len(partial),
+                "implementedProjectSide": sum(1 for item in checks if item["projectSide"] == "implemented"),
+            },
+            "checks": checks,
+            "recommendedSequence": [
+                "先接 Platform MCP Gateway，并确认 Radar 不保存平台 token。",
+                "用 radar_xmcp_pressure_test execute=false/true 跑 X 小批量生产压测。",
+                "启动常驻 worker 并设置平台级限速和重试。",
+                "接对象存储，再补齐小红书、YouTube、Reddit 等深度 provider。",
+                "让 AI 员工只依据 agent_feedback 回复用户和触发下一步。",
+            ],
+        }
+
+    def api_mcp_integrations(self, query: dict[str, list[str]]) -> dict:
+        integration_type = (query.get("type") or [""])[0]
+        payload = mcp_integrations_catalog()
+        items = payload["items"]
+        if integration_type:
+            items = [item for item in items if item.get("type") == integration_type]
+        return {"manager": payload.get("manager"), "items": items}
+
+    def api_xmcp_pressure_test(self, body: dict) -> dict:
+        conn = self.conn()
+        max_accounts = max(1, min(parse_int(str(body.get("maxAccounts") or body.get("max_accounts") or ""), 2) or 2, 25))
+        max_results = max(1, min(parse_int(str(body.get("maxResults") or body.get("max_results") or ""), 5) or 5, 20))
+        raw_handles = body.get("handles") or body.get("identifiers") or []
+        if isinstance(raw_handles, str):
+            handles = [part.strip() for part in re.split(r"[\n,\s]+", raw_handles) if part.strip()]
+        else:
+            handles = [str(item).strip() for item in raw_handles if str(item).strip()]
+        category = (body.get("category") or "XMCP压测").strip() or "XMCP压测"
+        account_ids: list[int] = []
+        selected_labels: list[str] = []
+        if handles:
+            for handle in handles[:max_accounts]:
+                row = upsert_person_account(
+                    conn,
+                    platform="x",
+                    identifier=handle,
+                    account_name=handle.lstrip("@"),
+                    category=category,
+                )
+                account_ids.append(int(row["id"]))
+                selected_labels.append(handle.lstrip("@"))
+        else:
+            rows = account_rows(conn, platform="x", category=body.get("category") or None, limit=max_accounts)
+            account_ids = [int(row["id"]) for row in rows]
+            selected_labels = [row["account_name"] for row in rows]
+        plan = {
+            "mode": "beeclaw:x_mcp",
+            "maxAccounts": len(account_ids),
+            "maxResults": max_results,
+            "estimatedApiCalls": len(account_ids) * 2,
+            "selectedAccounts": selected_labels,
+            "creditsGuard": {
+                "hardMaxAccounts": 25,
+                "hardMaxResultsPerAccount": 20,
+                "note": "每个账号通常至少消耗用户解析和 posts 查询两次 X API/MCP 调用。",
+            },
+        }
+        if body.get("execute") is False:
+            return {**plan, "run": None}
+        parent_payload = {
+            "platform": "x",
+            "mode": "beeclaw:x_mcp",
+            "sourceType": "batch",
+            "batchKind": "xmcp-pressure-test",
+            "accountIds": account_ids,
+            "maxResults": max_results,
+            "maxAttempts": parse_int(str(body.get("maxAttempts") or ""), 1) or 1,
+            "queue": bool_body(body, "queue", True),
+        }
+        parent_id = self.create_run(
+            conn,
+            body=parent_payload,
+            source_type="batch",
+            input_label=f"xmcp-pressure:{len(account_ids)} accounts",
+            status="queued",
+            agent_type="crawler",
+            batch_total=len(account_ids),
+        )
+        child_ids: list[str] = []
+        for index, account_id in enumerate(account_ids, start=1):
+            account = conn.execute("SELECT * FROM source_accounts WHERE id = ?", (account_id,)).fetchone()
+            child_payload = {
+                "platform": "x",
+                "mode": "beeclaw:x_mcp",
+                "sourceType": "account",
+                "accountId": account_id,
+                "maxResults": max_results,
+                "maxAttempts": parent_payload["maxAttempts"],
+                "queue": True,
+                "parentRunId": parent_id,
+                "batchIndex": index,
+                "batchTotal": len(account_ids),
+            }
+            child_id = self.create_run(
+                conn,
+                body=child_payload,
+                source_type="account",
+                input_label=account["account_name"] if account else str(account_id),
+                status="queued",
+                agent_type="crawler",
+                parent_run_id=parent_id,
+                batch_index=index,
+                batch_total=len(account_ids),
+            )
+            child_ids.append(child_id)
+        report = {
+            "accounts": len(account_ids),
+            "successes": 0,
+            "saved": 0,
+            "failures": 0,
+            "media": {"downloaded": 0, "failed": 0},
+            "feishuWritten": 0,
+            "details": [{"message": "X MCP 压测任务已创建。", "childRunIds": child_ids, **plan}],
+        }
+        conn.execute(
+            """
+            UPDATE crawl_runs
+            SET report_json = ?, total_accounts = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(report, ensure_ascii=False, sort_keys=True), len(account_ids), utc_now_iso(), parent_id),
+        )
+        conn.commit()
+        return {**plan, "run": self.api_run_detail(parent_id)}
 
     def api_runs(self, query: dict[str, list[str]]) -> dict:
         limit = parse_int((query.get("limit") or ["50"])[0], 50)
@@ -1371,16 +2205,60 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         if row is None:
             return {"error": "not_found"}
         run = self.hydrate_run(dict(row))
-        contents = self.api_contents({"runId": [run_id], "limit": ["50"]})["items"]
+        child_rows = rows_to_dicts(
+            conn.execute(
+                """
+                SELECT *
+                FROM crawl_runs
+                WHERE parent_run_id = ?
+                ORDER BY COALESCE(batch_index, 0), created_at
+                """,
+                (run_id,),
+            )
+        )
+        children = [self.hydrate_run(dict(child)) for child in child_rows]
+        run["children"] = children
+        if children:
+            contents = []
+            for child in children:
+                contents.extend(self.api_contents({"runId": [child["id"]], "limit": ["50"]})["items"])
+            contents = contents[:50]
+        else:
+            contents = self.api_contents({"runId": [run_id], "limit": ["50"]})["items"]
         run["contents"] = contents
         run["agent_feedback"] = self.agent_feedback_for_run(run)
         return run
 
-    def api_run_retry(self, run_id: str) -> dict:
+    def api_run_retry(self, run_id: str, body: dict | None = None) -> dict:
         conn = self.conn()
         row = conn.execute("SELECT * FROM crawl_runs WHERE id = ?", (run_id,)).fetchone()
         if row is None:
             return {"error": "not_found"}
+        body = body or {}
+        if bool_body(body, "queue", False):
+            now = utc_now_iso()
+            conn.execute(
+                """
+                UPDATE crawl_runs
+                SET status = 'queued',
+                    success_count = 0,
+                    failure_count = 0,
+                    saved_count = 0,
+                    media_downloaded = 0,
+                    media_failed = 0,
+                    feishu_written = 0,
+                    next_attempt_at = NULL,
+                    locked_at = NULL,
+                    locked_by = NULL,
+                    last_error = NULL,
+                    finished_at = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, run_id),
+            )
+            conn.commit()
+            return self.api_run_detail(run_id)
         params = json.loads(row["params_json"] or "{}")
         return self.api_run_crawl(params)
 
@@ -1388,7 +2266,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         status = (body.get("status") or "").strip()
         if not status:
             return {"error": "status_required"}
-        allowed = {"scheduled", "running", "success", "partial_success", "failed", "paused", "cancelled"}
+        allowed = {"queued", "scheduled", "running", "success", "partial_success", "failed", "paused", "cancelled"}
         if status not in allowed:
             return {"error": "unsupported_status"}
         conn = self.conn()
@@ -1409,6 +2287,16 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             """,
             (status, json.dumps(report, ensure_ascii=False, sort_keys=True), finished_at, utc_now_iso(), run_id),
         )
+        if row["source_type"] == "batch" and status in {"paused", "cancelled"}:
+            child_finished_at = finished_at if status == "cancelled" else None
+            conn.execute(
+                """
+                UPDATE crawl_runs
+                SET status = ?, finished_at = ?, updated_at = ?
+                WHERE parent_run_id = ? AND status = 'queued'
+                """,
+                (status, child_finished_at, utc_now_iso(), run_id),
+            )
         conn.commit()
         return self.api_run_detail(run_id)
 
@@ -1426,14 +2314,63 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         backend_values = []
         for item in contents:
             raw_payload = safe_json(item.get("raw_payload_json"))
-            provider = item.get("provider") or raw_payload.get("source")
+            provider = beeclaw_provider_name(item.get("provider") or raw_payload.get("source"))
             if provider:
                 provider_values.append(provider)
-            backend = raw_payload.get("provider_backend") or raw_payload.get("execution_backend")
+            backend = beeclaw_execution_backend_name(raw_payload.get("provider_backend") or raw_payload.get("execution_backend"))
             if backend:
                 backend_values.append(backend)
         providers = sorted(set(provider_values))
         execution_backends = sorted(set(backend_values))
+        backend_attempts = []
+        selection_reason = None
+        metrics_complete = True
+        media_complete = True
+        warnings = []
+        for detail in report.get("details", []):
+            if not isinstance(detail, dict):
+                continue
+            if detail.get("selection_reason") and not selection_reason:
+                selection_reason = detail.get("selection_reason")
+            if isinstance(detail.get("backend_attempts"), list):
+                backend_attempts.extend(detail["backend_attempts"])
+            if detail.get("error") == "auto_provider_unavailable" and detail.get("message"):
+                try:
+                    payload = json.loads(detail["message"])
+                    if isinstance(payload.get("attempts"), list):
+                        backend_attempts.extend(payload["attempts"])
+                except (TypeError, ValueError):
+                    pass
+        for item in contents:
+            raw_payload = safe_json(item.get("raw_payload_json"))
+            if raw_payload.get("selection_reason") and not selection_reason:
+                selection_reason = raw_payload.get("selection_reason")
+            if isinstance(raw_payload.get("backend_attempts"), list):
+                backend_attempts.extend(raw_payload["backend_attempts"])
+            if raw_payload.get("metrics_complete") is False:
+                metrics_complete = False
+            if raw_payload.get("media_complete") is False:
+                media_complete = False
+        if "x_rss" in execution_backends:
+            metrics_complete = False
+            media_complete = False
+            warnings.append("metrics_incomplete")
+            params = run.get("params") or {}
+            if (
+                bool_body(params, "downloadMedia", False)
+                or bool_body(params, "downloadImages", False)
+                or bool_body(params, "downloadVideos", False)
+                or bool_body(params, "includeVideos", False)
+                or bool_body(params, "include_images", False)
+                or bool_body(params, "include_videos", False)
+            ):
+                warnings.append("video_metadata_incomplete")
+        if "browser_session" in execution_backends:
+            metrics_complete = False
+            media_complete = False
+            warnings.append("browser_session_data_may_be_incomplete")
+        warnings = sorted(set(warnings))
+        backend_attempts = dedupe_dict_list(backend_attempts)
         errors = [
             detail
             for detail in report.get("details", [])
@@ -1447,10 +2384,14 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             detail.get("error") == "credits_depleted" or detail.get("status_code") == 402
             for detail in errors
         )
-        if status == "scheduled":
+        if status == "queued":
+            message = f"已创建采集任务 {run.get('id')}，等待 worker 执行。"
+        elif status == "running":
+            message = f"采集任务 {run.get('id')} 正在执行。"
+        elif status == "scheduled":
             message = f"已创建定时任务 {run.get('id')}，等待调度执行。"
         elif has_credits_error:
-            message = f"采集失败：X API credits 不足，保存 {saved} 条，失败 {failures} 个。请先在 X Developer Portal 充值或改用 feedgrab:x_rss 免费模式。"
+            message = f"采集失败：X API credits 不足，保存 {saved} 条，失败 {failures} 个。请先在 X Developer Portal 充值或改用 beeclaw:x_rss 免费模式。"
         elif status == "failed":
             message = f"采集失败：保存 0 条，失败 {failures} 个。"
         elif status == "partial_success":
@@ -1469,8 +2410,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                     "content_id": item.get("id"),
                     "title": item.get("title") or (item.get("original_text") or item.get("text") or "")[:80],
                     "source_url": item.get("url"),
-                    "provider": item.get("provider") or raw_payload.get("source"),
-                    "execution_backend": raw_payload.get("provider_backend") or raw_payload.get("execution_backend"),
+                    "provider": beeclaw_provider_name(item.get("provider") or raw_payload.get("source")),
+                    "execution_backend": beeclaw_execution_backend_name(raw_payload.get("provider_backend") or raw_payload.get("execution_backend")),
                     "metrics": {
                         "views": item.get("view_count"),
                         "likes": item.get("like_count"),
@@ -1533,7 +2474,13 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "media_failed": media_failed,
                 "providers": providers,
                 "execution_backends": execution_backends,
+                "selection_reason": selection_reason,
+                "metrics_complete": metrics_complete,
+                "media_complete": media_complete,
             },
+            "selection_reason": selection_reason,
+            "backend_attempts": backend_attempts,
+            "warnings": warnings,
             "content_ids": content_ids,
             "top_contents": top_contents,
             "errors": errors,
@@ -1541,19 +2488,32 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "report_markdown": "\n".join(report_lines),
         }
 
-    def create_run(self, conn: sqlite3.Connection, *, body: dict, source_type: str, input_label: str | None, status: str = "running", agent_type: str = "crawler") -> str:
+    def create_run(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        body: dict,
+        source_type: str,
+        input_label: str | None,
+        status: str = "running",
+        agent_type: str = "crawler",
+        parent_run_id: str | None = None,
+        batch_index: int | None = None,
+        batch_total: int | None = None,
+    ) -> str:
         run_id = f"crawl-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         now = utc_now_iso()
         conn.execute(
             """
             INSERT INTO crawl_runs (
-                id, agent_type, source_type, platform, mode, status, input_label,
-                params_json, started_at, updated_at
+                id, parent_run_id, agent_type, source_type, platform, mode, status, input_label,
+                params_json, batch_index, batch_total, max_attempts, started_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
+                parent_run_id,
                 agent_type,
                 source_type,
                 body.get("platform") or None,
@@ -1561,6 +2521,9 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 status,
                 input_label,
                 json.dumps(body, ensure_ascii=False, sort_keys=True),
+                batch_index,
+                batch_total,
+                parse_int(str(body.get("maxAttempts") or body.get("max_attempts") or ""), 1) or 1,
                 now,
                 now,
             ),
@@ -1568,8 +2531,53 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         conn.commit()
         return run_id
 
+    def mark_run_running(self, conn: sqlite3.Connection, run_id: str, body: dict) -> None:
+        now = utc_now_iso()
+        conn.execute(
+            """
+            UPDATE crawl_runs
+            SET status = 'running', params_json = ?, finished_at = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(body, ensure_ascii=False, sort_keys=True), now, run_id),
+        )
+        conn.commit()
+
+    def run_is_cancelled(self, conn: sqlite3.Connection, run_id: str | None) -> bool:
+        if not run_id:
+            return False
+        row = conn.execute("SELECT status FROM crawl_runs WHERE id = ?", (run_id,)).fetchone()
+        return bool(row and row["status"] == "cancelled")
+
     def finish_run(self, conn: sqlite3.Connection, run_id: str, report: dict) -> None:
         now = utc_now_iso()
+        existing = conn.execute("SELECT status FROM crawl_runs WHERE id = ?", (run_id,)).fetchone()
+        if existing is not None and existing["status"] == "cancelled":
+            conn.execute(
+                """
+                UPDATE crawl_runs
+                SET total_accounts = ?, success_count = ?, failure_count = ?,
+                    saved_count = ?, media_downloaded = ?, media_failed = ?,
+                    feishu_written = ?, report_json = ?, finished_at = COALESCE(finished_at, ?),
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    report["accounts"],
+                    report["successes"],
+                    report["failures"],
+                    report["saved"],
+                    report["media"]["downloaded"],
+                    report["media"]["failed"],
+                    report.get("feishuWritten", 0),
+                    json.dumps(report, ensure_ascii=False, sort_keys=True),
+                    now,
+                    now,
+                    run_id,
+                ),
+            )
+            conn.commit()
+            return
         status = "success"
         if report["failures"] and report["saved"]:
             status = "partial_success"
@@ -1741,6 +2749,9 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         media_totals = {"downloaded": 0, "failed": 0}
         details = []
         for row in rows:
+            if self.run_is_cancelled(conn, run_id):
+                details.append({"status": "cancelled", "message": "任务已被取消，停止处理后续账号。"})
+                break
             account = dict(row)
             provider_key = (account["platform"], mode)
             try:
@@ -1818,7 +2829,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
 
     def api_crawl(self, body: dict) -> dict:
         platform = body.get("platform") or None
-        mode = body.get("mode") or "auto"
+        mode = normalize_provider_mode(body.get("mode") or "auto")
         limit = parse_int(str(body.get("limit") or ""), None)
         category = body.get("category") or None
         conn = self.conn()
@@ -1827,20 +2838,41 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         report = self.run_accounts(conn, rows=rows, body=body)
         return {"accounts": report["accounts"], "saved": report["saved"], "failures": report["failures"], "details": report["details"][:50], "media": report["media"]}
 
-    def api_run_crawl(self, body: dict) -> dict:
+    def api_run_crawl(self, body: dict, run_id: str | None = None) -> dict:
         conn = self.conn()
         body = self.apply_strategy(conn, body)
-        source_type = body.get("sourceType") or ("account" if body.get("identifier") else "file")
-        if source_type == "url" or body.get("url"):
-            return self.api_run_feedgrab_url(body)
+        body = {**body, "mode": normalize_provider_mode(body.get("mode"))}
+        source_type = body.get("sourceType") or ("url" if body.get("url") else ("account" if (body.get("identifier") or body.get("accountId")) else "file"))
+        if source_type == "batch":
+            return self.api_run_detail(run_id) if run_id else {"error": "batch_requires_queue"}
+        if run_id:
+            self.mark_run_running(conn, run_id, body)
+        if source_type == "url":
+            return self.api_run_feedgrab_url(body, run_id=run_id)
         if source_type == "keyword" or body.get("query"):
-            return self.api_run_feedgrab_keyword(body)
+            return self.api_run_feedgrab_keyword(body, run_id=run_id)
         platform = body.get("platform") or None
         category = body.get("category") or None
         limit = parse_int(str(body.get("limit") or ""), None)
         input_label = body.get("identifier") or body.get("fileName") or category or platform or "全部数据源"
-        run_id = self.create_run(conn, body=body, source_type=source_type, input_label=input_label)
-        if source_type == "account" or body.get("identifier"):
+        if not run_id:
+            run_id = self.create_run(conn, body=body, source_type=source_type, input_label=input_label)
+        if body.get("accountId"):
+            row = conn.execute("SELECT * FROM source_accounts WHERE id = ?", (int(body["accountId"]),)).fetchone()
+            if row is None:
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": {"downloaded": 0, "failed": 0},
+                    "feishuWritten": 0,
+                    "details": [{"accountId": body.get("accountId"), "error": "account_not_found"}],
+                }
+                self.finish_run(conn, run_id, report)
+                return self.api_run_detail(run_id)
+            rows = [row]
+        elif source_type == "account" or body.get("identifier"):
             account = upsert_person_account(
                 conn,
                 platform=body.get("platform") or "x",
@@ -1857,7 +2889,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
 
     def upsert_feedgrab_url_account(self, conn: sqlite3.Connection, *, item_platform: str, url: str, source_name: str | None, category: str) -> sqlite3.Row:
         parsed = urlparse(url)
-        account_name = (source_name or parsed.netloc or "feedgrab-url").strip() or "feedgrab-url"
+        account_name = (source_name or parsed.netloc or "beeclaw-url").strip() or "beeclaw-url"
         conn.execute(
             """
             INSERT INTO source_accounts (
@@ -1881,7 +2913,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 f"{item_platform}-{account_name}",
                 account_name,
                 account_name,
-                "feedgrab-url",
+                "beeclaw-url",
             ),
         )
         conn.commit()
@@ -1890,12 +2922,12 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             (item_platform, account_name),
         ).fetchone()
         if row is None:
-            raise RuntimeError("failed to create feedgrab URL source account")
+            raise RuntimeError("failed to create Beeclaw URL source account")
         return row
 
     def upsert_feedgrab_keyword_account(self, conn: sqlite3.Connection, *, platform: str, query: str, category: str) -> sqlite3.Row:
         account_name = f"{platform}:{query}".strip()
-        account_url = f"feedgrab://{platform}/search?keyword={quote(query)}"
+        account_url = f"beeclaw://{platform}/search?keyword={quote(query)}"
         conn.execute(
             """
             INSERT INTO source_accounts (
@@ -1919,7 +2951,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 f"{platform}-search-{query}",
                 query,
                 query,
-                "feedgrab-keyword",
+                "beeclaw-keyword",
             ),
         )
         conn.commit()
@@ -1928,21 +2960,22 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             (platform, account_name),
         ).fetchone()
         if row is None:
-            raise RuntimeError("failed to create feedgrab keyword source account")
+            raise RuntimeError("failed to create Beeclaw keyword source account")
         return row
 
-    def api_run_feedgrab_url(self, body: dict) -> dict:
+    def api_run_feedgrab_url(self, body: dict, run_id: str | None = None) -> dict:
         url = (body.get("url") or body.get("identifier") or "").strip()
         if not url:
             return {"error": "url_required"}
         conn = self.conn()
-        body = {**body, "sourceType": "url", "mode": body.get("mode") or "feedgrab"}
-        run_id = self.create_run(
-            conn,
-            body=body,
-            source_type="url",
-            input_label=url,
-        )
+        body = {**body, "sourceType": "url", "mode": normalize_provider_mode(body.get("mode") or "beeclaw")}
+        if not run_id:
+            run_id = self.create_run(
+                conn,
+                body=body,
+                source_type="url",
+                input_label=url,
+            )
         media_stats = {"downloaded": 0, "failed": 0}
         try:
             content = read_url(url)
@@ -1960,17 +2993,21 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                     raw_payload={**item.raw_payload, "requested_platform": requested_platform},
                 )
             provider_route = feedgrab_provider_for_platform(requested_platform)
-            detail_provider = provider_route or "feedgrab:universal_reader"
+            detail_provider = provider_route or "beeclaw:universal_reader"
             if provider_route:
+                backend_source = item.raw_payload.get("provider_backend") or feedgrab_backend_name(
+                    item.raw_payload.get("source", "beeclaw:universal_reader")
+                )
                 item = replace(
                     item,
                     raw_payload={
                         **item.raw_payload,
                         "source": provider_route,
-                        "provider_backend": item.raw_payload.get("source", "feedgrab:universal_reader"),
+                        "provider_backend": backend_source,
                     },
                 )
-            category = (body.get("category") or "feedgrab URL").strip() or "feedgrab URL"
+            result_items = rss_feed_entry_items(content, item, provider_route=provider_route or "beeclaw:rss") or [item]
+            category = (body.get("category") or "Beeclaw URL").strip() or "Beeclaw URL"
             source_name = None
             if hasattr(content, "to_dict"):
                 source_name = (content.to_dict().get("source_name") or "").strip()
@@ -1983,7 +3020,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 source_name=source_name,
                 category=category,
             )
-            result = FetchResult(account_id=int(account["id"]), platform=item.platform, items=[item])
+            result = FetchResult(account_id=int(account["id"]), platform=item.platform, items=result_items)
             if bool_body(body, "downloadMedia", False) or bool_body(body, "downloadImages", False) or bool_body(body, "downloadVideos", False):
                 media_stats = download_fetch_result_media(result, account=dict(account), media_root=Path(body.get("mediaDir") or DEFAULT_MEDIA_DIR))
             content_ids = save_fetch_result_with_ids(conn, result)
@@ -2014,22 +3051,150 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "failures": 1,
                 "media": media_stats,
                 "feishuWritten": 0,
-                "details": [{"url": url, "provider": "feedgrab:universal_reader", "error": "feedgrab_unavailable", "message": str(exc)}],
+                "details": [{"url": url, "provider": "beeclaw:universal_reader", "error": "feedgrab_unavailable", "message": str(exc)}],
+            }
+        except Exception as exc:
+            log_failure(
+                conn,
+                source_account_id=None,
+                platform=body.get("platform") or "web",
+                error_type=type(exc).__name__,
+                error_message=str(exc),
+                raw_context={"url": url, "run_id": run_id, "source": "beeclaw-url"},
+            )
+            report = {
+                "accounts": 1,
+                "successes": 0,
+                "saved": 0,
+                "failures": 1,
+                "media": media_stats,
+                "feishuWritten": 0,
+                "details": [
+                    {
+                        "url": url,
+                        "provider": feedgrab_provider_for_platform(body.get("platform")) or "beeclaw:universal_reader",
+                        "error": type(exc).__name__,
+                        "message": str(exc),
+                    }
+                ],
             }
         self.finish_run(conn, run_id, report)
         return self.api_run_detail(run_id)
 
-    def api_run_feedgrab_keyword(self, body: dict) -> dict:
+    def api_run_feedgrab_keyword(self, body: dict, run_id: str | None = None) -> dict:
         platform = ((body.get("platform") or "xhs").strip().lower())
         platform = "xhs" if platform == "xiaohongshu" else platform
         query = (body.get("query") or body.get("identifier") or "").strip()
         if not query:
             return {"error": "query_required"}
         conn = self.conn()
-        body = {**body, "sourceType": "keyword", "query": query, "platform": platform, "mode": body.get("mode") or "feedgrab"}
-        run_id = self.create_run(conn, body=body, source_type="keyword", input_label=f"{platform}:{query}")
+        body = {**body, "sourceType": "keyword", "query": query, "platform": platform, "mode": normalize_provider_mode(body.get("mode") or "beeclaw")}
+        if not run_id:
+            run_id = self.create_run(conn, body=body, source_type="keyword", input_label=f"{platform}:{query}")
         media_stats = {"downloaded": 0, "failed": 0}
         category = (body.get("category") or f"{platform} 关键词").strip() or f"{platform} 关键词"
+        if platform == "x" and body["mode"] in {"beeclaw:x_mcp", "xmcp", "auto"}:
+            try:
+                max_results = parse_int(str(body.get("maxResults") or ""), 20) or 20
+                server_url = os.getenv("XMCP_SERVER_URL", "http://127.0.0.1:8000/mcp")
+                payload = backend_mcp_call_tool(
+                    integration="x-mcp",
+                    server_url=server_url,
+                    tool_name="searchPostsRecent",
+                    arguments={
+                        "query": query,
+                        "max_results": max(10, min(max_results, 100)),
+                        "start_time": iso_days_ago(7),
+                        "tweet.fields": ["created_at", "public_metrics", "lang", "attachments", "author_id"],
+                        "expansions": ["attachments.media_keys", "author_id"],
+                        "media.fields": ["type", "url", "preview_image_url", "width", "height", "alt_text", "variants"],
+                        "user.fields": ["username", "name"],
+                    },
+                )
+                media_by_key = {str(media.get("media_key")): media for media in payload.get("includes", {}).get("media", []) or []}
+                users = {str(user.get("id")): user for user in payload.get("includes", {}).get("users", []) or []}
+                items = []
+                for tweet in payload.get("data", []) or []:
+                    tweet_id = str(tweet["id"])
+                    metrics = tweet.get("public_metrics", {})
+                    author = users.get(str(tweet.get("author_id"))) or {}
+                    username = author.get("username")
+                    media_assets = media_assets_from_x_payload(tweet, media_by_key)
+                    items.append(
+                        ContentItem(
+                            platform="x",
+                            original_content_id=tweet_id,
+                            title=None,
+                            text=tweet.get("text"),
+                            published_at=tweet.get("created_at"),
+                            url=f"https://x.com/{username}/status/{tweet_id}" if username else f"https://x.com/i/web/status/{tweet_id}",
+                            view_count=int_or_none(metrics.get("impression_count")),
+                            like_count=int_or_none(metrics.get("like_count")),
+                            comment_count=int_or_none(metrics.get("reply_count")),
+                            share_count=int_or_none(metrics.get("retweet_count")),
+                            media_type=media_type_from_assets("post", media_assets),
+                            language=tweet.get("lang"),
+                            raw_payload={
+                                **tweet,
+                                "source": "beeclaw:x",
+                                "provider_backend": "x_mcp",
+                                "search_query": query,
+                                "metrics_complete": True,
+                                "media_complete": True,
+                                "selection_reason": "关键词采集需要结构化 recent search，因此选择 X MCP backend。",
+                            },
+                            media_assets=media_assets,
+                        )
+                    )
+                if bool_body(body, "mediaOnly", False):
+                    items = [item for item in items if item.media_assets]
+                account = self.upsert_feedgrab_keyword_account(conn, platform="x", query=query, category=category)
+                fetch_result = FetchResult(account_id=int(account["id"]), platform="x", items=items)
+                if bool_body(body, "downloadMedia", False) or bool_body(body, "downloadImages", False) or bool_body(body, "downloadVideos", False):
+                    media_stats = download_fetch_result_media(fetch_result, account=dict(account), media_root=Path(body.get("mediaDir") or DEFAULT_MEDIA_DIR))
+                content_ids = save_fetch_result_with_ids(conn, fetch_result)
+                link_run_contents(conn, run_id, content_ids)
+                saved = len(content_ids)
+                report = {
+                    "accounts": 1,
+                    "successes": 1,
+                    "saved": saved,
+                    "failures": 0,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [
+                        {
+                            "query": query,
+                            "provider": "beeclaw:x",
+                            "execution_backend": "x_mcp",
+                            "selection_reason": "关键词采集需要结构化 recent search，因此选择 X MCP backend。",
+                            "backend_attempts": [{"backend": "x_mcp", "mode": body["mode"], "status": "success"}],
+                            "saved": saved,
+                            "contentIds": content_ids,
+                        }
+                    ],
+                }
+            except ProviderError as exc:
+                log_failure(
+                    conn,
+                    source_account_id=None,
+                    platform="x",
+                    error_type=exc.error_type,
+                    error_message=str(exc),
+                    status_code=exc.status_code,
+                    raw_context={"query": query, "run_id": run_id, "source": "beeclaw-xmcp-search"},
+                )
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [{"query": query, "provider": "beeclaw:x", "execution_backend": "x_mcp", "error": exc.error_type, "message": str(exc), "status_code": exc.status_code}],
+                }
+            self.finish_run(conn, run_id, report)
+            return self.api_run_detail(run_id)
         if platform != "xhs":
             report = {
                 "accounts": 1,
@@ -2042,7 +3207,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                     {
                         "platform": platform,
                         "query": query,
-                        "provider": "feedgrab:keyword",
+                        "provider": "beeclaw:keyword",
                         "error": "keyword_search_unavailable",
                         "message": "该平台当前关键词模式未接入；请使用 URL、账号或已授权 provider。",
                     }
@@ -2054,7 +3219,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 platform=platform,
                 error_type="keyword_search_unavailable",
                 error_message=report["details"][0]["message"],
-                raw_context={"query": query, "run_id": run_id, "source": "feedgrab-keyword"},
+                raw_context={"query": query, "run_id": run_id, "source": "beeclaw-keyword"},
             )
             self.finish_run(conn, run_id, report)
             return self.api_run_detail(run_id)
@@ -2064,17 +3229,27 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             note_type = "all"
             if bool_body(body, "mediaOnly", False):
                 note_type = "all"
-            result_payload = search_feedgrab_xhs_keyword(
+            result_payload = search_beeclaw_xhs_keyword(
                 keyword=query,
                 sort=(body.get("sort") or "general"),
                 note_type=note_type,
                 max_results=max_results,
             )
+            provider_backend = result_payload.get("_provider_backend") or "feedgrab:xhs_search"
             notes = result_payload.get("notes") or result_payload.get("items") or []
             items = []
             for note in notes:
                 item = xhs_note_to_item(note, query=query)
-                items.append(replace(item, raw_payload={**item.raw_payload, "source": "feedgrab:xhs_search"}))
+                items.append(
+                    replace(
+                        item,
+                        raw_payload={
+                            **item.raw_payload,
+                            "source": "beeclaw:xhs",
+                            "provider_backend": provider_backend,
+                        },
+                    )
+                )
             if bool_body(body, "mediaOnly", False):
                 items = [item for item in items if item.media_assets]
             account = self.upsert_feedgrab_keyword_account(conn, platform="xhs", query=query, category=category)
@@ -2091,7 +3266,15 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "failures": 0,
                 "media": media_stats,
                 "feishuWritten": 0,
-                "details": [{"query": query, "provider": "feedgrab:xhs_search", "saved": saved, "contentIds": content_ids}],
+                "details": [
+                    {
+                        "query": query,
+                        "provider": "beeclaw:xhs",
+                        "execution_backend": beeclaw_execution_backend_name(provider_backend),
+                        "saved": saved,
+                        "contentIds": content_ids,
+                    }
+                ],
             }
         except FeedgrabUnavailable as exc:
             log_failure(
@@ -2100,7 +3283,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 platform=platform,
                 error_type="feedgrab_unavailable",
                 error_message=str(exc),
-                raw_context={"query": query, "run_id": run_id, "source": "feedgrab-keyword"},
+                raw_context={"query": query, "run_id": run_id, "source": "beeclaw-keyword"},
             )
             report = {
                 "accounts": 1,
@@ -2109,7 +3292,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "failures": 1,
                 "media": media_stats,
                 "feishuWritten": 0,
-                "details": [{"query": query, "provider": "feedgrab:xhs_search", "error": "feedgrab_unavailable", "message": str(exc)}],
+                "details": [{"query": query, "provider": "beeclaw:xhs", "error": "feedgrab_unavailable", "message": str(exc)}],
             }
         except Exception as exc:
             log_failure(
@@ -2118,7 +3301,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 platform=platform,
                 error_type=type(exc).__name__,
                 error_message=str(exc),
-                raw_context={"query": query, "run_id": run_id, "source": "feedgrab-keyword"},
+                raw_context={"query": query, "run_id": run_id, "source": "beeclaw-keyword"},
             )
             report = {
                 "accounts": 1,
@@ -2127,20 +3310,230 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "failures": 1,
                 "media": media_stats,
                 "feishuWritten": 0,
-                "details": [{"query": query, "provider": "feedgrab:xhs_search", "error": type(exc).__name__, "message": str(exc)}],
+                "details": [{"query": query, "provider": "beeclaw:xhs", "error": type(exc).__name__, "message": str(exc)}],
             }
         self.finish_run(conn, run_id, report)
         return self.api_run_detail(run_id)
 
     def api_create_collection_task(self, body: dict) -> dict:
         payload = dict(body)
-        if payload.get("url"):
+        urls = parse_url_batch(payload.get("urls") or payload.get("urlList") or payload.get("url_list"))
+        if len(urls) > 1:
+            payload["urls"] = urls
+            return self.api_queue_batch_collection_task(payload)
+        if len(urls) == 1 and not payload.get("url"):
+            payload["url"] = urls[0]
+        explicit_source_type = (payload.get("sourceType") or payload.get("source_type") or "").strip().lower()
+        x_profile_handle = x_profile_handle_from_url(payload.get("url") or "")
+        if x_profile_handle and explicit_source_type not in {"url", "keyword"}:
+            payload["sourceType"] = "account"
+            payload["platform"] = "x"
+            payload["identifier"] = payload.get("identifier") or x_profile_handle
+        elif payload.get("url") and explicit_source_type not in {"account", "keyword"}:
             payload["sourceType"] = "url"
         elif payload.get("identifier"):
             payload["sourceType"] = payload.get("sourceType") or "account"
         payload.setdefault("agentType", "crawler")
-        payload.setdefault("mode", "auto" if (payload.get("platform") or "x") == "x" else "feedgrab")
+        payload.setdefault("mode", "auto" if (payload.get("platform") or "x") == "x" else "beeclaw")
+        payload["mode"] = normalize_provider_mode(payload.get("mode"))
+        if bool_body(payload, "queue", False) or str(payload.get("executionMode") or "").lower() in {"queued", "async"}:
+            return self.api_queue_collection_task(payload)
         return self.api_run_crawl(payload)
+
+    def api_queue_batch_collection_task(self, body: dict) -> dict:
+        conn = self.conn()
+        payload = self.apply_strategy(conn, dict(body))
+        urls = parse_url_batch(payload.get("urls") or payload.get("urlList") or payload.get("url_list"))
+        if len(urls) < 2:
+            if urls and not payload.get("url"):
+                payload["url"] = urls[0]
+            return self.api_queue_collection_task(payload)
+        payload["urls"] = urls
+        payload["sourceType"] = "batch"
+        payload["mode"] = normalize_provider_mode(payload.get("mode") or ("auto" if (payload.get("platform") or "x") == "x" else "beeclaw"))
+        agent_type = payload.get("agentType") or payload.get("agent_type") or "crawler"
+        parent_id = self.create_run(
+            conn,
+            body=payload,
+            source_type="batch",
+            input_label=f"batch:{len(urls)} urls",
+            status="queued",
+            agent_type=agent_type,
+            batch_total=len(urls),
+        )
+        child_ids: list[str] = []
+        for index, url in enumerate(urls, start=1):
+            child_payload = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"urls", "urlList", "url_list", "sourceType"}
+            }
+            child_payload.update(
+                {
+                    "url": url,
+                    "sourceType": "url",
+                    "queue": True,
+                    "parentRunId": parent_id,
+                    "batchIndex": index,
+                    "batchTotal": len(urls),
+                    "agentType": agent_type,
+                }
+            )
+            child_id = self.create_run(
+                conn,
+                body=child_payload,
+                source_type="url",
+                input_label=url,
+                status="queued",
+                agent_type=agent_type,
+                parent_run_id=parent_id,
+                batch_index=index,
+                batch_total=len(urls),
+            )
+            child_ids.append(child_id)
+        report = {
+            "accounts": len(urls),
+            "successes": 0,
+            "saved": 0,
+            "failures": 0,
+            "media": {"downloaded": 0, "failed": 0},
+            "feishuWritten": 0,
+            "details": [
+                {
+                    "message": "批量采集任务已拆分为 queued 子任务。",
+                    "childRunIds": child_ids,
+                    "total": len(child_ids),
+                }
+            ],
+        }
+        conn.execute(
+            """
+            UPDATE crawl_runs
+            SET report_json = ?, total_accounts = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(report, ensure_ascii=False, sort_keys=True), len(urls), utc_now_iso(), parent_id),
+        )
+        conn.commit()
+        return self.api_run_detail(parent_id)
+
+    def api_queue_collection_task(self, body: dict) -> dict:
+        conn = self.conn()
+        payload = self.apply_strategy(conn, dict(body))
+        payload["mode"] = normalize_provider_mode(payload.get("mode"))
+        source_type = payload.get("sourceType") or ("url" if payload.get("url") else ("keyword" if payload.get("query") else ("account" if payload.get("identifier") else "file")))
+        if source_type == "file" and not payload.get("fileName"):
+            return self.api_queue_account_batch_collection_task(payload)
+        input_label = payload.get("url") or payload.get("query") or payload.get("identifier") or payload.get("fileName") or payload.get("category") or payload.get("platform") or "queued-task"
+        run_id = self.create_run(
+            conn,
+            body=payload,
+            source_type=source_type,
+            input_label=input_label,
+            status="queued",
+            agent_type=payload.get("agentType") or payload.get("agent_type") or "crawler",
+        )
+        return self.api_run_detail(run_id)
+
+    def api_queue_account_batch_collection_task(self, body: dict) -> dict:
+        conn = self.conn()
+        payload = self.apply_strategy(conn, dict(body))
+        payload["mode"] = normalize_provider_mode(payload.get("mode") or "auto")
+        platform = payload.get("platform") or None
+        category = payload.get("category") or None
+        limit = parse_int(str(payload.get("limit") or ""), None)
+        rows = account_rows(conn, platform=platform, category=category, limit=limit)
+        if not rows:
+            run_id = self.create_run(
+                conn,
+                body={**payload, "sourceType": "file"},
+                source_type="file",
+                input_label=payload.get("category") or payload.get("platform") or "空账号源",
+                status="failed",
+                agent_type=payload.get("agentType") or payload.get("agent_type") or "crawler",
+            )
+            report = {
+                "accounts": 0,
+                "successes": 0,
+                "saved": 0,
+                "failures": 1,
+                "media": {"downloaded": 0, "failed": 0},
+                "feishuWritten": 0,
+                "details": [{"error": "no_enabled_accounts", "message": "没有匹配的启用账号源。"}],
+            }
+            self.finish_run(conn, run_id, report)
+            return self.api_run_detail(run_id)
+        if len(rows) == 1:
+            row = rows[0]
+            single_payload = {
+                **payload,
+                "sourceType": "account",
+                "accountId": int(row["id"]),
+                "platform": row["platform"],
+                "queue": True,
+            }
+            return self.api_queue_collection_task(single_payload)
+        agent_type = payload.get("agentType") or payload.get("agent_type") or "crawler"
+        parent_payload = {**payload, "sourceType": "batch", "batchKind": "accounts", "accountIds": [int(row["id"]) for row in rows]}
+        parent_id = self.create_run(
+            conn,
+            body=parent_payload,
+            source_type="batch",
+            input_label=f"batch:{len(rows)} accounts",
+            status="queued",
+            agent_type=agent_type,
+            batch_total=len(rows),
+        )
+        child_ids: list[str] = []
+        for index, row in enumerate(rows, start=1):
+            child_payload = {
+                **payload,
+                "sourceType": "account",
+                "accountId": int(row["id"]),
+                "platform": row["platform"],
+                "queue": True,
+                "parentRunId": parent_id,
+                "batchIndex": index,
+                "batchTotal": len(rows),
+                "agentType": agent_type,
+            }
+            child_id = self.create_run(
+                conn,
+                body=child_payload,
+                source_type="account",
+                input_label=row["account_name"],
+                status="queued",
+                agent_type=agent_type,
+                parent_run_id=parent_id,
+                batch_index=index,
+                batch_total=len(rows),
+            )
+            child_ids.append(child_id)
+        report = {
+            "accounts": len(rows),
+            "successes": 0,
+            "saved": 0,
+            "failures": 0,
+            "media": {"downloaded": 0, "failed": 0},
+            "feishuWritten": 0,
+            "details": [
+                {
+                    "message": "账号源批量采集任务已拆分为 queued 子任务。",
+                    "childRunIds": child_ids,
+                    "total": len(child_ids),
+                }
+            ],
+        }
+        conn.execute(
+            """
+            UPDATE crawl_runs
+            SET report_json = ?, total_accounts = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (json.dumps(report, ensure_ascii=False, sort_keys=True), len(rows), utc_now_iso(), parent_id),
+        )
+        conn.commit()
+        return self.api_run_detail(parent_id)
 
     def api_create_employee_task(self, body: dict) -> dict:
         agent_type = (body.get("agentType") or body.get("agent_type") or "crawler").strip()
@@ -2193,6 +3586,346 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             (limit,),
         ).fetchall()
         return [int(row["id"]) for row in rows]
+
+    def interaction_candidate_item(self, row: dict) -> dict:
+        raw_payload = safe_json(row.get("raw_payload_json"))
+        return {
+            "id": row["id"],
+            "content_id": row["content_id"],
+            "run_id": row.get("run_id"),
+            "platform": row.get("platform"),
+            "provider": beeclaw_provider_name(row.get("provider") or raw_payload.get("source")),
+            "execution_backend": beeclaw_execution_backend_name(raw_payload.get("provider_backend") or raw_payload.get("execution_backend")),
+            "source_account": row.get("account_name"),
+            "category": row.get("category"),
+            "title": row.get("title") or (row.get("original_text") or row.get("text") or "")[:80],
+            "original_text": row.get("original_text") or row.get("text"),
+            "source_url": row.get("source_url") or row.get("url"),
+            "published_at": row.get("published_at"),
+            "metrics": {
+                "views": row.get("view_count"),
+                "likes": row.get("like_count"),
+                "comments": row.get("comment_count"),
+                "reposts": row.get("share_count"),
+            },
+            "status": row.get("status"),
+            "window_score": row.get("window_score"),
+            "score_reason": row.get("score_reason"),
+            "action_type": row.get("action_type"),
+            "suggested_reply": row.get("suggested_reply"),
+            "suggested_quote": row.get("suggested_quote"),
+            "risk_level": row.get("risk_level"),
+            "risk_reason": row.get("risk_reason"),
+            "target_channel": row.get("target_channel") or "",
+            "push_status": row.get("push_status"),
+            "pushed_at": row.get("pushed_at"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+
+    def api_interaction_candidates(self, query: dict[str, list[str]]) -> dict:
+        status = (query.get("status") or [""])[0]
+        target_channel = (query.get("targetChannel") or query.get("target_channel") or [""])[0]
+        platform = (query.get("platform") or [""])[0]
+        run_id = (query.get("runId") or query.get("run_id") or [""])[0]
+        min_score = parse_int((query.get("minScore") or query.get("min_score") or [""])[0], None)
+        limit = parse_int((query.get("limit") or ["50"])[0], 50) or 50
+        raw_ids = (query.get("contentIds") or query.get("content_ids") or [""])[0]
+        content_ids = [int(part.strip()) for part in raw_ids.split(",") if part.strip().isdigit()]
+        sql = """
+            SELECT ic.*, c.provider, c.title, c.text, c.original_text, c.published_at,
+                   c.view_count, c.like_count, c.comment_count, c.share_count,
+                   c.raw_payload_json, c.url, a.account_name, a.category
+            FROM interaction_candidates ic
+            JOIN source_contents c ON c.id = ic.content_id
+            JOIN source_accounts a ON a.id = c.source_account_id
+            WHERE 1 = 1
+        """
+        params: list[object] = []
+        if status:
+            sql += " AND ic.status = ?"
+            params.append(status)
+        if target_channel:
+            sql += " AND ic.target_channel = ?"
+            params.append(target_channel)
+        if platform:
+            sql += " AND ic.platform = ?"
+            params.append(platform)
+        if run_id:
+            sql += " AND ic.run_id = ?"
+            params.append(run_id)
+        if min_score is not None:
+            sql += " AND ic.window_score >= ?"
+            params.append(min_score)
+        if content_ids:
+            sql += f" AND ic.content_id IN ({','.join('?' for _ in content_ids)})"
+            params.extend(content_ids)
+        sql += " ORDER BY ic.window_score DESC, COALESCE(c.published_at, ic.created_at) DESC LIMIT ?"
+        params.append(limit)
+        conn = self.conn()
+        rows = rows_to_dicts(conn.execute(sql, params))
+        return {"items": [self.interaction_candidate_item(row) for row in rows]}
+
+    def interaction_candidates_markdown(self, items: list[dict]) -> str:
+        parts = ["# 黄金互动窗口候选", ""]
+        for item in items:
+            parts.extend(
+                [
+                    f"## {item.get('title') or item.get('source_url') or item.get('content_id')}",
+                    "",
+                    f"- 内容 ID: {item.get('content_id')}",
+                    f"- 平台: {item.get('platform') or ''}",
+                    f"- 账号: {item.get('source_account') or ''}",
+                    f"- 原文链接: {item.get('source_url') or ''}",
+                    f"- 发布时间: {item.get('published_at') or ''}",
+                    f"- 窗口分: {item.get('window_score')}",
+                    f"- 建议动作: {item.get('action_type') or ''}",
+                    f"- 状态: {item.get('status') or ''} / {item.get('push_status') or ''}",
+                    f"- 目标通道: {item.get('target_channel') or ''}",
+                    f"- 指标: views={item['metrics'].get('views')}, likes={item['metrics'].get('likes')}, comments={item['metrics'].get('comments')}, reposts={item['metrics'].get('reposts')}",
+                    "",
+                    "### 评分原因",
+                    "",
+                    item.get("score_reason") or "",
+                    "",
+                    "### 建议回复",
+                    "",
+                    item.get("suggested_reply") or "",
+                    "",
+                    "### 建议引用",
+                    "",
+                    item.get("suggested_quote") or "",
+                    "",
+                ]
+            )
+        return "\n".join(parts).strip() + "\n"
+
+    def api_export_interaction_candidates(self, query: dict[str, list[str]]) -> dict:
+        output_format = ((query.get("format") or ["json"])[0] or "json").lower()
+        items = self.api_interaction_candidates(query)["items"]
+        payload: dict[str, object] = {
+            "format": output_format,
+            "count": len(items),
+            "items": items,
+        }
+        if output_format == "jsonl":
+            payload["dataset_jsonl"] = "\n".join(json.dumps(item, ensure_ascii=False, sort_keys=True) for item in items)
+        elif output_format in {"md", "markdown"}:
+            payload["dataset_markdown"] = self.interaction_candidates_markdown(items)
+        return payload
+
+    def api_save_interaction_candidates(self, body: dict) -> dict:
+        candidates = body.get("candidates") or []
+        if isinstance(candidates, dict):
+            candidates = [candidates]
+        if not candidates:
+            candidates = [body]
+        conn = self.conn()
+        now = utc_now_iso()
+        saved_items: list[dict] = []
+        failures: list[dict] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                failures.append({"candidate": candidate, "error": "invalid_candidate"})
+                continue
+            content_id = parse_int(str(candidate.get("contentId") or candidate.get("content_id") or ""), None)
+            if content_id is None:
+                failures.append({"candidate": candidate, "error": "missing_content_id"})
+                continue
+            content = conn.execute("SELECT id, platform, url FROM source_contents WHERE id = ?", (content_id,)).fetchone()
+            if content is None:
+                failures.append({"content_id": content_id, "error": "content_not_found"})
+                continue
+            run_id = str(candidate.get("runId") or candidate.get("run_id") or body.get("runId") or body.get("run_id") or "").strip() or None
+            target_channel = str(candidate.get("targetChannel") or candidate.get("target_channel") or body.get("targetChannel") or body.get("target_channel") or "").strip()
+            action_type = str(candidate.get("actionType") or candidate.get("action_type") or "observe").strip() or "observe"
+            status = str(candidate.get("status") or "pending").strip() or "pending"
+            risk_level = str(candidate.get("riskLevel") or candidate.get("risk_level") or "normal").strip() or "normal"
+            score_value = candidate.get("windowScore", candidate.get("window_score", 0))
+            try:
+                window_score = float(score_value or 0)
+            except (TypeError, ValueError):
+                window_score = 0.0
+            conn.execute(
+                """
+                INSERT INTO interaction_candidates (
+                    content_id, run_id, platform, source_url, status, window_score,
+                    score_reason, action_type, suggested_reply, suggested_quote,
+                    risk_level, risk_reason, target_channel, created_by, raw_candidate_json,
+                    updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(content_id, target_channel, action_type) DO UPDATE SET
+                    run_id = excluded.run_id,
+                    platform = excluded.platform,
+                    source_url = excluded.source_url,
+                    status = excluded.status,
+                    window_score = excluded.window_score,
+                    score_reason = excluded.score_reason,
+                    suggested_reply = excluded.suggested_reply,
+                    suggested_quote = excluded.suggested_quote,
+                    risk_level = excluded.risk_level,
+                    risk_reason = excluded.risk_reason,
+                    created_by = excluded.created_by,
+                    raw_candidate_json = excluded.raw_candidate_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    content_id,
+                    run_id,
+                    content["platform"],
+                    content["url"],
+                    status,
+                    window_score,
+                    candidate.get("scoreReason") or candidate.get("score_reason"),
+                    action_type,
+                    candidate.get("suggestedReply") or candidate.get("suggested_reply"),
+                    candidate.get("suggestedQuote") or candidate.get("suggested_quote"),
+                    risk_level,
+                    candidate.get("riskReason") or candidate.get("risk_reason"),
+                    target_channel,
+                    candidate.get("createdBy") or candidate.get("created_by") or "hermes_agent",
+                    json.dumps(candidate, ensure_ascii=False, sort_keys=True),
+                    now,
+                ),
+            )
+            saved_items.append({"content_id": content_id, "target_channel": target_channel, "action_type": action_type})
+        conn.commit()
+        if not saved_items:
+            return {"saved": 0, "failures": failures, "items": []}
+        query: dict[str, list[str]] = {"limit": [str(max(len(saved_items), 1))]}
+        query["contentIds"] = [",".join(str(item["content_id"]) for item in saved_items)]
+        return {
+            "saved": len(saved_items),
+            "failures": failures,
+            "items": self.api_interaction_candidates(query)["items"],
+        }
+
+    def api_handoff_to_interaction_agent(self, body: dict) -> dict:
+        ids = self.selected_content_ids(body, default_limit=parse_int(str(body.get("limit") or ""), 20) or 20)
+        conn = self.conn()
+        run_id = self.create_run(
+            conn,
+            body=body,
+            source_type="raw_contents",
+            input_label=f"互动建议 handoff {len(ids)} 条",
+            agent_type="interaction_handoff",
+        )
+        rows = rows_to_dicts(
+            conn.execute(
+                f"""
+                SELECT c.*, a.account_name, a.category, a.radar_name
+                FROM source_contents c
+                JOIN source_accounts a ON a.id = c.source_account_id
+                WHERE c.id IN ({",".join("?" for _ in ids) if ids else "NULL"})
+                ORDER BY COALESCE(c.published_at, c.fetched_at) DESC
+                """,
+                ids,
+            )
+        ) if ids else []
+        items = [self.raw_content_contract_item(row) for row in rows]
+        requirements = {
+            "golden_window_score": bool_body(body, "goldenWindowScore", True),
+            "generate_reply": bool_body(body, "generateReply", True),
+            "generate_quote": bool_body(body, "generateQuote", True),
+            "risk_check": bool_body(body, "riskCheck", True),
+        }
+        target_channel = str(body.get("targetChannel") or body.get("target_channel") or "").strip()
+        handoff = {
+            "task_id": run_id,
+            "content_ids": [item["content_id"] for item in items],
+            "handoff_type": "raw_content_for_interaction_window",
+            "target_channel": target_channel,
+            "requirements": requirements,
+            "items": items,
+        }
+        interaction_task = {
+            "agent": "互动建议 Agent",
+            "status": "ready_for_interaction_scoring",
+            "handoff": handoff,
+            "writeback_tool": "radar_save_interaction_candidates",
+            "writeback_api": "/api/interaction-candidates",
+            "expected_output_per_item": [
+                "content_id",
+                "window_score",
+                "score_reason",
+                "action_type",
+                "suggested_reply",
+                "suggested_quote",
+                "risk_level",
+                "risk_reason",
+                "target_channel",
+            ],
+            "instructions": [
+                "Only score raw content IDs included in this handoff.",
+                "Use metrics, freshness, account context, and reply/quote suitability to identify golden interaction windows.",
+                "Do not post to X directly. Save candidates back to Radar for review or downstream table/Feishu push.",
+                "Call radar_save_interaction_candidates with one candidate per useful content item.",
+            ],
+        }
+        report = {
+            "accounts": len(items),
+            "successes": len(items),
+            "saved": len(items),
+            "failures": max(0, len(ids) - len(items)),
+            "media": {"downloaded": 0, "failed": 0},
+            "feishuWritten": 0,
+            "details": [{"message": "互动建议 Agent handoff payload generated", "content_ids": handoff["content_ids"]}],
+            "handoff": handoff,
+            "interaction_task": interaction_task,
+        }
+        self.finish_run(conn, run_id, report)
+        return {
+            "handoff": handoff,
+            "interaction_task": interaction_task,
+            "run": self.api_run_detail(run_id),
+        }
+
+    def api_push_interaction_candidates(self, body: dict) -> dict:
+        raw_ids = body.get("candidateIds") or body.get("candidate_ids") or []
+        if isinstance(raw_ids, str):
+            raw_ids = [part.strip() for part in raw_ids.split(",") if part.strip()]
+        candidate_ids = [int(item) for item in raw_ids if str(item).isdigit()]
+        if not candidate_ids:
+            listed = self.api_interaction_candidates(
+                {
+                    "status": [str(body.get("status") or "pending")],
+                    "targetChannel": [str(body.get("targetChannel") or body.get("target_channel") or "")],
+                    "limit": [str(body.get("limit") or 20)],
+                }
+            )
+            candidate_ids = [int(item["id"]) for item in listed["items"]]
+        target_channel = str(body.get("targetChannel") or body.get("target_channel") or "").strip()
+        push_status = str(body.get("pushStatus") or body.get("push_status") or "pushed").strip() or "pushed"
+        conn = self.conn()
+        rows: list[dict] = []
+        if candidate_ids:
+            placeholders = ",".join("?" for _ in candidate_ids)
+            rows = rows_to_dicts(conn.execute(f"SELECT * FROM interaction_candidates WHERE id IN ({placeholders})", candidate_ids))
+            now = utc_now_iso()
+            push_payload = {
+                "target_channel": target_channel,
+                "candidate_ids": candidate_ids,
+                "items": rows,
+            }
+            conn.execute(
+                f"""
+                UPDATE interaction_candidates
+                SET push_status = ?, pushed_at = ?, target_channel = COALESCE(NULLIF(?, ''), target_channel),
+                    push_payload_json = ?, updated_at = ?
+                WHERE id IN ({placeholders})
+                """,
+                [push_status, now, target_channel, json.dumps(push_payload, ensure_ascii=False, sort_keys=True), now, *candidate_ids],
+            )
+            conn.commit()
+        refreshed = self.api_interaction_candidates({"limit": [str(max(len(candidate_ids), 1))]})["items"]
+        id_set = set(candidate_ids)
+        return {
+            "pushed": len(candidate_ids),
+            "target_channel": target_channel,
+            "push_status": push_status,
+            "items": [item for item in refreshed if int(item["id"]) in id_set] if id_set else [],
+        }
 
     def api_handoff_to_organizer(self, body: dict) -> dict:
         ids = self.selected_content_ids(body, default_limit=parse_int(str(body.get("limit") or ""), 20) or 20)

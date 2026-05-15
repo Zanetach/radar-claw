@@ -1,0 +1,89 @@
+%%{init: {
+  "theme": "base",
+  "flowchart": {
+    "curve": "basis",
+    "nodeSpacing": 42,
+    "rankSpacing": 58
+  },
+  "themeVariables": {
+    "fontFamily": "Inter, PingFang SC, Microsoft YaHei, Arial",
+    "primaryColor": "#EAF3FF",
+    "primaryTextColor": "#0F172A",
+    "primaryBorderColor": "#2563EB",
+    "lineColor": "#64748B",
+    "secondaryColor": "#ECFDF5",
+    "tertiaryColor": "#FFF7ED",
+    "clusterBkg": "#F8FAFC",
+    "clusterBorder": "#CBD5E1"
+  }
+}}%%
+flowchart TB
+  U["用户输入采集需求<br/>账号 / 关键词 / URL / 时间范围"]:::user
+  A["Hermes / 千蜂 AI 员工<br/>识别平台、目标、策略和约束"]:::agent
+  R["Radar MCP Tools<br/>radar_agent_collect<br/>radar_create_collection_task"]:::mcp
+  MGR["平台 MCP Manager<br/>统一管理 MCP 接入 / token / session / tool proxy"]:::mcp
+
+  U --> A --> R
+
+  subgraph RADAR["Radar v1：只负责采集、入库、状态和结构化反馈"]
+    direction TB
+    T["Collection Task Runtime<br/>创建 task_id / 记录状态 / 失败可追踪"]:::radar
+    P["Beeclaw Provider Engine<br/>统一 provider 路由与抓取执行"]:::provider
+
+    subgraph ROUTE["平台路由"]
+      direction LR
+      X{"X / Twitter<br/>beeclaw:x auto"}:::decision
+      O["其他平台<br/>YouTube / RSS / XHS / Web / GitHub 等"]:::backend
+    end
+
+    subgraph XB["X 后端自动选择"]
+      direction LR
+      XM["x_mcp<br/>通过平台 X MCP<br/>结构化指标 / 媒体"]:::backend
+      XA["x_api<br/>Bearer Token<br/>REST API fallback"]:::backend
+      XR["x_rss<br/>免费 RSS fallback<br/>指标和视频不完整"]:::backend
+    end
+
+    C["抓取结果标准化<br/>正文 / 链接 / 发布时间 / 指标 / 媒体 metadata"]:::provider
+    S["Radar 原始数据存储<br/>crawl_runs / source_contents<br/>media_assets / failures"]:::storage
+    F["agent_feedback<br/>task_id / content_ids / source_url<br/>保存数 / 失败数 / execution_backend"]:::feedback
+
+    T --> P --> ROUTE
+    X -->|"优先"| XM
+    X -->|"MCP 不可用"| XA
+    X -->|"无 token 或 credits 不足"| XR
+    O --> C
+    XM --> C
+    XA --> C
+    XR --> C
+    C --> S --> F
+  end
+
+  R --> T
+  XM -. "integration=x-mcp" .-> MGR
+  MGR -. "MCP tool result" .-> XM
+  F -->|"返回结构化采集结果"| A
+  A -->|"向用户反馈采集结果"| U
+
+  subgraph DOWN["第二阶段：可选下游 Agent 读取 Radar 原始数据"]
+    direction LR
+    Q["内容整理 Agent<br/>翻译 / 摘要 / 分类 / 质量判断"]:::downstream
+    IA["互动建议 Agent<br/>黄金互动窗口评分<br/>回复 / 引用建议"]:::downstream
+    E["导出与推送<br/>Markdown / JSON / 飞书表格 / 存储"]:::export
+  end
+
+  S -->|"raw content"| Q
+  S -->|"raw content + metrics"| IA
+  Q -->|"整理结果回写 / 导出"| E
+  IA -->|"候选建议回写 / 导出"| E
+
+  classDef user fill:#DBEAFE,stroke:#2563EB,stroke-width:2px,color:#0F172A;
+  classDef agent fill:#EEF2FF,stroke:#4F46E5,stroke-width:2px,color:#111827;
+  classDef mcp fill:#F0FDFA,stroke:#0F766E,stroke-width:2px,color:#0F172A;
+  classDef radar fill:#ECFDF5,stroke:#059669,stroke-width:2px,color:#052E16;
+  classDef provider fill:#F0F9FF,stroke:#0284C7,stroke-width:2px,color:#0C4A6E;
+  classDef decision fill:#FEF3C7,stroke:#D97706,stroke-width:2px,color:#451A03;
+  classDef backend fill:#FFF7ED,stroke:#EA580C,stroke-width:1.5px,color:#431407;
+  classDef storage fill:#F1F5F9,stroke:#475569,stroke-width:2px,color:#0F172A;
+  classDef feedback fill:#FCE7F3,stroke:#DB2777,stroke-width:2px,color:#500724;
+  classDef downstream fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px,color:#2E1065;
+  classDef export fill:#ECFCCB,stroke:#65A30D,stroke-width:2px,color:#1A2E05;

@@ -58,6 +58,12 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("video-1", rows[0]["media_assets_json"])
         self.assertEqual(rows[0]["original_text"], "Description")
         self.assertEqual(rows[0]["translation_status"], "pending")
+        media_rows = conn.execute("SELECT * FROM media_assets").fetchall()
+        self.assertEqual(len(media_rows), 1)
+        self.assertEqual(media_rows[0]["content_id"], rows[0]["id"])
+        self.assertIsNone(media_rows[0]["provider"])
+        self.assertEqual(media_rows[0]["media_type"], "video")
+        self.assertEqual(media_rows[0]["download_status"], "pending")
 
     def test_default_strategies_are_seeded(self):
         conn = sqlite3.connect(":memory:")
@@ -69,6 +75,47 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("x-7d-original-media", ids)
         self.assertIn("x-rss-ai-intel", ids)
         self.assertIn("linkedin-browser-debug", ids)
+
+    def test_old_crawl_runs_table_is_migrated_before_parent_index(self):
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute(
+            """
+            CREATE TABLE crawl_runs (
+                id TEXT PRIMARY KEY,
+                agent_type TEXT NOT NULL DEFAULT 'crawler',
+                source_type TEXT NOT NULL,
+                platform TEXT,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL,
+                input_label TEXT,
+                params_json TEXT NOT NULL DEFAULT '{}',
+                total_accounts INTEGER NOT NULL DEFAULT 0,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                saved_count INTEGER NOT NULL DEFAULT 0,
+                media_downloaded INTEGER NOT NULL DEFAULT 0,
+                media_failed INTEGER NOT NULL DEFAULT 0,
+                feishu_written INTEGER NOT NULL DEFAULT 0,
+                report_json TEXT NOT NULL DEFAULT '{}',
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        init_db(conn)
+
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(crawl_runs)").fetchall()}
+        self.assertIn("parent_run_id", columns)
+        self.assertIn("batch_index", columns)
+        self.assertIn("attempt_count", columns)
+        self.assertIn("max_attempts", columns)
+        self.assertIn("next_attempt_at", columns)
+        indexes = {row["name"] for row in conn.execute("PRAGMA index_list(crawl_runs)").fetchall()}
+        self.assertIn("idx_crawl_runs_parent", indexes)
 
     def test_run_content_links_track_exact_task_outputs(self):
         conn = sqlite3.connect(":memory:")
@@ -113,6 +160,9 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(len(links), 1)
         self.assertEqual(links[0]["run_id"], "run-1")
         self.assertEqual(links[0]["content_id"], ids[0])
+        content = conn.execute("SELECT provider, raw_payload_json FROM source_contents WHERE id = ?", (ids[0],)).fetchone()
+        self.assertEqual(content["provider"], "beeclaw:youtube")
+        self.assertIn('"provider_backend": "feedgrab:youtube"', content["raw_payload_json"])
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from typing import Any, Protocol
@@ -15,11 +16,34 @@ from typing import Any, Protocol
 from .models import (
     ContentItem,
     FetchResult,
+    PLATFORM_BILIBILI,
+    PLATFORM_DOUYIN,
+    PLATFORM_FEISHU,
+    PLATFORM_GITHUB,
+    PLATFORM_HACKERNEWS,
+    PLATFORM_IDCFLARE,
     PLATFORM_INSTAGRAM,
+    PLATFORM_KDOCS,
     PLATFORM_LINKEDIN,
+    PLATFORM_LINUXDO,
+    PLATFORM_MEDIUM,
+    PLATFORM_REDDIT,
+    PLATFORM_RSS,
+    PLATFORM_TELEGRAM,
+    PLATFORM_WEB,
+    PLATFORM_WECHAT,
+    PLATFORM_WEIBO,
     PLATFORM_X,
+    PLATFORM_XHS,
+    PLATFORM_XIAOYUZHOU,
+    PLATFORM_XIMALAYA,
     PLATFORM_YOUTUBE,
+    PLATFORM_YOUDAO,
+    PLATFORM_ZHIHU,
 )
+from .beeclaw_adapter import read_url, unified_content_to_item
+from .beeclaw_adapter.platforms import beeclaw_provider_name, feedgrab_provider_for_platform
+from .platform_mcp_gateway import PlatformMcpGatewayError, call_platform_mcp_tool, platform_gateway_enabled
 from .x_intel import fetch_bestblogs_accounts, parse_xgo_metrics, strip_xgo_html
 
 
@@ -27,9 +51,10 @@ MODE_AUTO = "auto"
 MODE_API = "api"
 MODE_NO_TOKEN = "no-token"
 MODE_XMCP = "xmcp"
-MODE_FEEDGRAB_XMCP = "feedgrab:x_mcp"
-MODE_FEEDGRAB_X_RSS = "feedgrab:x_rss"
-MODE_FEEDGRAB = "feedgrab"
+MODE_FEEDGRAB_X = "beeclaw:x"
+MODE_FEEDGRAB_XMCP = "beeclaw:x_mcp"
+MODE_FEEDGRAB_X_RSS = "beeclaw:x_rss"
+MODE_FEEDGRAB = "beeclaw"
 MODE_X_RSS = "x-rss"
 MODE_BROWSER_SESSION = "browser-session"
 MODE_CHROME_SESSION = "chrome-session"
@@ -39,6 +64,7 @@ SUPPORTED_PROVIDER_MODES = (
     MODE_NO_TOKEN,
     MODE_API,
     MODE_XMCP,
+    MODE_FEEDGRAB_X,
     MODE_FEEDGRAB_XMCP,
     MODE_FEEDGRAB_X_RSS,
     MODE_FEEDGRAB,
@@ -52,6 +78,12 @@ AUTO_RECOVERABLE_ERRORS = {
     "missing_dependency",
     "credits_depleted",
     "xmcp_error",
+    "platform_mcp_gateway_disabled",
+    "platform_mcp_gateway_unavailable",
+    "platform_mcp_gateway_http_error",
+    "platform_mcp_gateway_bad_response",
+    "platform_mcp_gateway_auth_failed",
+    "backend_mcp_error",
     "webbridge_unavailable",
     "not_logged_in",
     "captcha_required",
@@ -62,6 +94,67 @@ AUTO_RECOVERABLE_ERRORS = {
 }
 
 _BESTBLOGS_XGO_CACHE: dict[str, str] | None = None
+
+X_PUBLIC_PROVIDER = "beeclaw:x"
+X_BACKEND_BY_MODE = {
+    MODE_FEEDGRAB_X: "auto",
+    MODE_FEEDGRAB_XMCP: "x_mcp",
+    MODE_XMCP: "x_mcp",
+    MODE_API: "x_api",
+    MODE_FEEDGRAB_X_RSS: "x_rss",
+    MODE_NO_TOKEN: "x_rss",
+    MODE_X_RSS: "x_rss",
+    MODE_BROWSER_SESSION: "browser_session",
+    MODE_CHROME_SESSION: "browser_session",
+}
+
+
+def x_backend_for_mode(mode: str) -> str:
+    return X_BACKEND_BY_MODE.get(mode, mode)
+
+
+def x_backend_selection_reason(backend: str) -> str:
+    if backend == "x_mcp":
+        return "X 自动模式优先使用官方 MCP backend，适合指标、媒体和结构化数据。"
+    if backend == "x_api":
+        return "X MCP 不可用，X_BEARER_TOKEN/API backend 可用，因此选择官方 API backend。"
+    if backend == "x_rss":
+        return "X MCP/API 不可用，降级到免费 RSS；指标和视频可能不完整。"
+    if backend == "twitter-cli":
+        return "显式允许 twitter-cli 调试 backend，因此选择本地 CLI。"
+    return f"选择 {backend} backend。"
+
+
+def x_backend_data_completeness(backend: str) -> dict[str, bool]:
+    if backend == "x_rss":
+        return {"metrics_complete": False, "media_complete": False}
+    if backend == "browser_session":
+        return {"metrics_complete": False, "media_complete": False}
+    return {"metrics_complete": True, "media_complete": True}
+
+
+def annotate_x_fetch_result(
+    result: FetchResult,
+    *,
+    backend: str,
+    backend_attempts: list[dict[str, Any]] | None = None,
+    selection_reason: str | None = None,
+) -> FetchResult:
+    items = []
+    for item in result.items:
+        raw_payload = dict(item.raw_payload or {})
+        previous_source = raw_payload.get("source")
+        if previous_source and previous_source != X_PUBLIC_PROVIDER:
+            raw_payload.setdefault("provider_source", previous_source)
+        raw_payload["source"] = X_PUBLIC_PROVIDER
+        raw_payload["provider_backend"] = backend
+        raw_payload.update(x_backend_data_completeness(backend))
+        if backend_attempts:
+            raw_payload["backend_attempts"] = backend_attempts
+        if selection_reason:
+            raw_payload["selection_reason"] = selection_reason
+        items.append(replace(item, raw_payload=raw_payload))
+    return replace(result, items=items)
 
 
 class ProviderError(Exception):
@@ -88,7 +181,34 @@ def normalize_provider_mode(mode: str | None) -> str:
         "mcp": MODE_XMCP,
         "x-mcp": MODE_XMCP,
         "x_mcp": MODE_XMCP,
+        "beeclaw": MODE_FEEDGRAB,
+        "beeclaw:x": MODE_FEEDGRAB_X,
+        "beegrab": MODE_FEEDGRAB,
+        "beegrab:x": MODE_FEEDGRAB_X,
+        "beeclaw:xapi": MODE_API,
+        "beeclaw:x-api": MODE_API,
+        "beeclaw:x_api": MODE_API,
+        "beegrab:xapi": MODE_API,
+        "beegrab:x-api": MODE_API,
+        "beegrab:x_api": MODE_API,
+        "feedgrab:x": MODE_FEEDGRAB_X,
+        "feedgrab:xapi": MODE_API,
+        "feedgrab:x-api": MODE_API,
+        "feedgrab:x_api": MODE_API,
+        "beeclaw:xmcp": MODE_FEEDGRAB_XMCP,
+        "beeclaw:x-mcp": MODE_FEEDGRAB_XMCP,
+        "beeclaw:x_mcp": MODE_FEEDGRAB_XMCP,
+        "beegrab:xmcp": MODE_FEEDGRAB_XMCP,
+        "beegrab:x-mcp": MODE_FEEDGRAB_XMCP,
+        "beegrab:x_mcp": MODE_FEEDGRAB_XMCP,
+        "beeclaw:xrss": MODE_FEEDGRAB_X_RSS,
+        "beeclaw:x-rss": MODE_FEEDGRAB_X_RSS,
+        "beeclaw:x_rss": MODE_FEEDGRAB_X_RSS,
+        "beegrab:xrss": MODE_FEEDGRAB_X_RSS,
+        "beegrab:x-rss": MODE_FEEDGRAB_X_RSS,
+        "beegrab:x_rss": MODE_FEEDGRAB_X_RSS,
         "feedgrab": MODE_FEEDGRAB,
+        "feedgrab:twitter": MODE_FEEDGRAB_X,
         "feedgrab:xmcp": MODE_FEEDGRAB_XMCP,
         "feedgrab:x-mcp": MODE_FEEDGRAB_XMCP,
         "feedgrab:x_mcp": MODE_FEEDGRAB_XMCP,
@@ -276,6 +396,27 @@ def mcp_call_tool(server_url: str, tool_name: str, arguments: dict[str, Any]) ->
         raise ProviderError(text or str(exc), error_type="xmcp_error") from exc
 
 
+def backend_mcp_call_tool(
+    *,
+    integration: str,
+    server_url: str,
+    tool_name: str,
+    arguments: dict[str, Any],
+    trace_id: str | None = None,
+) -> dict[str, Any]:
+    if platform_gateway_enabled():
+        try:
+            return call_platform_mcp_tool(
+                integration=integration,
+                tool=tool_name,
+                arguments=arguments,
+                trace_id=trace_id,
+            )
+        except PlatformMcpGatewayError as exc:
+            raise ProviderError(str(exc), error_type=exc.error_type, status_code=exc.status_code) from exc
+    return mcp_call_tool(server_url, tool_name, arguments)
+
+
 def int_or_none(value: Any) -> int | None:
     if value is None:
         return None
@@ -283,6 +424,21 @@ def int_or_none(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def x_username_from_status_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host not in {"x.com", "twitter.com"} and not host.endswith(".x.com") and not host.endswith(".twitter.com"):
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[1] == "status":
+        return parts[0].lstrip("@")
+    return None
 
 
 def iso_days_ago(days: int) -> str:
@@ -436,6 +592,8 @@ class NoTokenUnsupportedProvider:
 
 class XRssProvider:
     platform = PLATFORM_X
+    source_name = X_PUBLIC_PROVIDER
+    backend_name: str | None = "x_rss"
 
     def account_handle(self, account: dict[str, Any]) -> str:
         return normalize_x_handle(
@@ -519,7 +677,9 @@ class XRssProvider:
                     media_type=media_type_from_assets("post", media_assets),
                     language=None,
                     raw_payload={
-                        "source": "xgo_rss",
+                        "source": self.source_name,
+                        **({"provider_backend": self.backend_name} if self.backend_name else {}),
+                        "rss_backend": "xgo_rss",
                         "rss_url": rss_url,
                         "guid": guid,
                         "raw_description": description,
@@ -533,6 +693,11 @@ class XRssProvider:
             items=items,
             last_seen_original_id=items[0].original_content_id if items else None,
         )
+
+
+class BeeclawXRssProvider(XRssProvider):
+    source_name = X_PUBLIC_PROVIDER
+    backend_name = "x_rss"
 
 
 def unescape_url(value: str) -> str:
@@ -573,6 +738,8 @@ class WebBridgeClient:
 
 class XBrowserSessionProvider:
     platform = PLATFORM_X
+    source_name = X_PUBLIC_PROVIDER
+    backend_name = "browser_session"
 
     extract_js = r"""
 (async () => {
@@ -689,6 +856,13 @@ class XBrowserSessionProvider:
         for raw in (payload.get("items") or [])[:max_results]:
             original_id = str(raw.get("id") or stable_content_id("x-browser", raw.get("url") or raw.get("text") or ""))
             media_assets = [asset for asset in (raw.get("media_assets") or []) if asset.get("url")]
+            author_username = x_username_from_status_url(raw.get("url"))
+            requested_handle = handle.lower()
+            browser_repost = (
+                bool(author_username and author_username.lower() != requested_handle)
+                or bool(re.search(r"(^|\n).{1,80}\sreposted(\n|$)", raw.get("raw_text") or "", flags=re.IGNORECASE))
+            )
+            referenced_tweets = [{"type": "retweeted", "id": original_id}] if browser_repost else []
             items.append(
                 ContentItem(
                     platform=self.platform,
@@ -703,7 +877,14 @@ class XBrowserSessionProvider:
                     share_count=int_or_none(raw.get("retweet_count")),
                     media_type=media_type_from_assets("post", media_assets),
                     language=None,
-                    raw_payload={"source": "x_browser_session", **raw},
+                    raw_payload={
+                        "source": self.source_name,
+                        "provider_backend": self.backend_name,
+                        **raw,
+                        "author_username": author_username,
+                        "requested_handle": handle,
+                        "referenced_tweets": referenced_tweets,
+                    },
                     media_assets=media_assets,
                 )
             )
@@ -718,6 +899,8 @@ class XBrowserSessionProvider:
 class XApiProvider:
     platform = PLATFORM_X
     base_url = "https://api.x.com/2"
+    source_name = X_PUBLIC_PROVIDER
+    backend_name = "x_api"
 
     def __init__(self) -> None:
         self.bearer_token = require_env("X_BEARER_TOKEN")
@@ -762,7 +945,11 @@ class XApiProvider:
                     share_count=int_or_none(metrics.get("retweet_count")),
                     media_type=media_type_from_assets("post", media_assets),
                     language=tweet.get("lang"),
-                    raw_payload=tweet,
+                    raw_payload={
+                        **tweet,
+                        "source": self.source_name,
+                        "provider_backend": self.backend_name,
+                    },
                     media_assets=media_assets,
                 )
             )
@@ -777,17 +964,19 @@ class XApiProvider:
 
 class XMcpXProvider:
     platform = PLATFORM_X
-    source_name = "xmcp"
+    source_name = X_PUBLIC_PROVIDER
+    backend_name: str | None = "x_mcp"
 
     def __init__(self) -> None:
         self.server_url = os.getenv("XMCP_SERVER_URL", "http://127.0.0.1:8000/mcp")
 
     def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
         handle = (account.get("account_handle") or account["account_name"]).lstrip("@")
-        user = mcp_call_tool(
-            self.server_url,
-            "getUsersByUsername",
-            {
+        user = backend_mcp_call_tool(
+            integration="x-mcp",
+            server_url=self.server_url,
+            tool_name="getUsersByUsername",
+            arguments={
                 "username": handle,
                 "user.fields": ["id", "name", "username"],
             },
@@ -809,11 +998,21 @@ class XMcpXProvider:
             params["since_id"] = account["last_seen_original_id"]
 
         try:
-            payload = mcp_call_tool(self.server_url, "getUsersPosts", params)
+            payload = backend_mcp_call_tool(
+                integration="x-mcp",
+                server_url=self.server_url,
+                tool_name="getUsersPosts",
+                arguments=params,
+            )
         except ProviderError as exc:
             if exc.error_type != "xmcp_error":
                 raise
-            payload = mcp_call_tool(self.server_url, "getUsersIdPosts", params)
+            payload = backend_mcp_call_tool(
+                integration="x-mcp",
+                server_url=self.server_url,
+                tool_name="getUsersIdPosts",
+                arguments=params,
+            )
         media_by_key = {str(media.get("media_key")): media for media in payload.get("includes", {}).get("media", []) or []}
         items = []
         for tweet in payload.get("data", []) or []:
@@ -834,7 +1033,11 @@ class XMcpXProvider:
                     share_count=int_or_none(metrics.get("retweet_count")),
                     media_type=media_type_from_assets("post", media_assets),
                     language=tweet.get("lang"),
-                    raw_payload={"source": self.source_name, **tweet},
+                    raw_payload={
+                        **tweet,
+                        "source": self.source_name,
+                        **({"provider_backend": self.backend_name} if self.backend_name else {}),
+                    },
                     media_assets=media_assets,
                 )
             )
@@ -848,13 +1051,80 @@ class XMcpXProvider:
 
 
 class FeedgrabXMcpXProvider(XMcpXProvider):
-    """Radar-facing feedgrab X MCP provider.
+    """Radar-facing Beeclaw X MCP provider.
 
-    The X MCP implementation is kept compatible with feedgrab's provider plan:
-    feedgrab owns the platform route, while Radar consumes normalized results.
+    Beeclaw is Radar's public provider namespace. The upstream feedgrab route is
+    preserved as provider_backend for auditability.
     """
 
-    source_name = "feedgrab:x_mcp"
+    source_name = X_PUBLIC_PROVIDER
+    backend_name = "x_mcp"
+
+
+class BeeclawUrlAccountProvider:
+    """Generic Beeclaw account provider for platforms that expose a readable URL.
+
+    This is the production fallback for non-X platform account rows until a
+    platform has a dedicated account/search API provider. It requires
+    source_accounts.account_url or a URL-like account_handle.
+    """
+
+    def __init__(self, platform: str) -> None:
+        self.platform = platform
+
+    def account_url(self, account: dict[str, Any]) -> str:
+        value = (account.get("account_url") or account.get("account_handle") or "").strip()
+        if not value.startswith(("http://", "https://")):
+            raise ProviderError(
+                f"{self.platform} Beeclaw account mode requires account_url or URL-like account_handle.",
+                error_type="missing_account_identifier",
+            )
+        return value
+
+    def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
+        url = self.account_url(account)
+        content = read_url(url)
+        item = unified_content_to_item(content)
+        provider = feedgrab_provider_for_platform(self.platform) or f"beeclaw:{self.platform}"
+        item = ContentItem(
+            platform=self.platform,
+            original_content_id=item.original_content_id,
+            title=item.title,
+            text=item.text,
+            published_at=item.published_at,
+            url=item.url or url,
+            view_count=item.view_count,
+            like_count=item.like_count,
+            comment_count=item.comment_count,
+            share_count=item.share_count,
+            media_type=item.media_type,
+            language=item.language,
+            raw_payload={
+                **item.raw_payload,
+                "source": beeclaw_provider_name(provider),
+                "provider_backend": item.raw_payload.get("provider_backend") or "beeclaw:universal_reader",
+                "account_url": url,
+            },
+            media_assets=item.media_assets,
+        )
+        return FetchResult(
+            account_id=int(account["id"]),
+            platform=self.platform,
+            items=[item],
+            last_seen_original_id=item.original_content_id,
+        )
+
+
+class BeeclawUrlAccountProviderFactory:
+    def __init__(self, platform: str) -> None:
+        self.platform = platform
+
+    def __call__(self) -> BeeclawUrlAccountProvider:
+        return BeeclawUrlAccountProvider(self.platform)
+
+
+def beeclaw_url_provider_factory(platform: str) -> BeeclawUrlAccountProviderFactory:
+    return BeeclawUrlAccountProviderFactory(platform)
 
 
 class YouTubeApiProvider:
@@ -1137,6 +1407,34 @@ def unsupported_provider_factory(platform: str) -> UnsupportedProviderFactory:
     return UnsupportedProviderFactory(platform)
 
 
+BEECLAW_URL_PLATFORMS = (
+    PLATFORM_XHS,
+    PLATFORM_WECHAT,
+    PLATFORM_BILIBILI,
+    PLATFORM_DOUYIN,
+    PLATFORM_WEIBO,
+    PLATFORM_ZHIHU,
+    PLATFORM_GITHUB,
+    PLATFORM_FEISHU,
+    PLATFORM_KDOCS,
+    PLATFORM_YOUDAO,
+    PLATFORM_RSS,
+    PLATFORM_TELEGRAM,
+    PLATFORM_REDDIT,
+    PLATFORM_HACKERNEWS,
+    PLATFORM_MEDIUM,
+    PLATFORM_LINUXDO,
+    PLATFORM_IDCFLARE,
+    PLATFORM_XIAOYUZHOU,
+    PLATFORM_XIMALAYA,
+    PLATFORM_WEB,
+)
+
+
+def beeclaw_url_provider_map() -> dict[str, BeeclawUrlAccountProviderFactory]:
+    return {platform: beeclaw_url_provider_factory(platform) for platform in BEECLAW_URL_PLATFORMS}
+
+
 PROVIDER_REGISTRY = {
     MODE_API: {
         PLATFORM_X: XApiProvider,
@@ -1156,6 +1454,12 @@ PROVIDER_REGISTRY = {
         PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
         PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
     },
+    MODE_FEEDGRAB_X: {
+        PLATFORM_X: FeedgrabXMcpXProvider,
+        PLATFORM_YOUTUBE: unsupported_provider_factory(PLATFORM_YOUTUBE),
+        PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
+        PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
+    },
     MODE_FEEDGRAB_XMCP: {
         PLATFORM_X: FeedgrabXMcpXProvider,
         PLATFORM_YOUTUBE: unsupported_provider_factory(PLATFORM_YOUTUBE),
@@ -1163,7 +1467,7 @@ PROVIDER_REGISTRY = {
         PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
     },
     MODE_FEEDGRAB_X_RSS: {
-        PLATFORM_X: XRssProvider,
+        PLATFORM_X: BeeclawXRssProvider,
         PLATFORM_YOUTUBE: unsupported_provider_factory(PLATFORM_YOUTUBE),
         PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
         PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
@@ -1173,6 +1477,7 @@ PROVIDER_REGISTRY = {
         PLATFORM_YOUTUBE: YouTubeRssProvider,
         PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
         PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
+        **beeclaw_url_provider_map(),
     },
     MODE_CHROME_SESSION: {
         PLATFORM_X: XBrowserSessionProvider,
@@ -1195,7 +1500,7 @@ PROVIDER_REGISTRY = {
 }
 
 AUTO_MODE_ORDER = {
-    PLATFORM_X: (MODE_FEEDGRAB_XMCP, MODE_XMCP, MODE_API, MODE_FEEDGRAB_X_RSS, MODE_CHROME_SESSION, MODE_X_RSS),
+    PLATFORM_X: (MODE_FEEDGRAB_XMCP, MODE_API, MODE_FEEDGRAB_X_RSS),
     PLATFORM_YOUTUBE: (MODE_NO_TOKEN, MODE_API),
     PLATFORM_LINKEDIN: (MODE_API,),
     PLATFORM_INSTAGRAM: (MODE_API,),
@@ -1221,14 +1526,36 @@ class AutoProvider:
         self.providers: dict[str, Provider] = {}
 
     def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
-        attempts = []
+        attempts: list[dict[str, Any]] = []
         for mode in self.mode_order:
+            backend = x_backend_for_mode(mode) if self.platform == PLATFORM_X else mode
             try:
                 if mode not in self.providers:
                     self.providers[mode] = build_provider(self.platform, mode=mode)
-                return self.providers[mode].fetch(account, max_results=max_results)
+                result = self.providers[mode].fetch(account, max_results=max_results)
+                if self.platform == PLATFORM_X:
+                    success_attempts = [
+                        *attempts,
+                        {"backend": backend, "mode": mode, "status": "success"},
+                    ]
+                    return annotate_x_fetch_result(
+                        result,
+                        backend=backend,
+                        backend_attempts=success_attempts,
+                        selection_reason=x_backend_selection_reason(backend),
+                    )
+                return result
             except ProviderError as exc:
-                attempts.append({"mode": mode, "error_type": exc.error_type, "message": str(exc)})
+                attempts.append(
+                    {
+                        "backend": backend,
+                        "mode": mode,
+                        "status": "failed",
+                        "error": exc.error_type,
+                        "message": str(exc),
+                        **({"status_code": exc.status_code} if exc.status_code else {}),
+                    }
+                )
                 if exc.error_type not in AUTO_RECOVERABLE_ERRORS:
                     raise
         raise ProviderError(
@@ -1239,7 +1566,7 @@ class AutoProvider:
 
 def build_provider(platform: str, *, mode: str = MODE_AUTO) -> Provider:
     mode = normalize_provider_mode(mode)
-    if mode == MODE_AUTO:
+    if mode == MODE_AUTO or (platform == PLATFORM_X and mode == MODE_FEEDGRAB_X):
         return AutoProvider(platform)
     providers = PROVIDER_REGISTRY.get(mode)
     if providers is None:
