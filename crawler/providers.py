@@ -4,6 +4,9 @@ import json
 import os
 import asyncio
 import re
+import shlex
+import subprocess
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -53,6 +56,7 @@ MODE_NO_TOKEN = "no-token"
 MODE_XMCP = "xmcp"
 MODE_FEEDGRAB_X = "beeclaw:x"
 MODE_FEEDGRAB_XMCP = "beeclaw:x_mcp"
+MODE_FEEDGRAB_X_TWITTERAPI_IO = "beeclaw:x_twitterapi_io"
 MODE_FEEDGRAB_X_RSS = "beeclaw:x_rss"
 MODE_FEEDGRAB = "beeclaw"
 MODE_X_RSS = "x-rss"
@@ -66,6 +70,7 @@ SUPPORTED_PROVIDER_MODES = (
     MODE_XMCP,
     MODE_FEEDGRAB_X,
     MODE_FEEDGRAB_XMCP,
+    MODE_FEEDGRAB_X_TWITTERAPI_IO,
     MODE_FEEDGRAB_X_RSS,
     MODE_FEEDGRAB,
     MODE_CHROME_SESSION,
@@ -101,6 +106,7 @@ X_BACKEND_BY_MODE = {
     MODE_FEEDGRAB_XMCP: "x_mcp",
     MODE_XMCP: "x_mcp",
     MODE_API: "x_api",
+    MODE_FEEDGRAB_X_TWITTERAPI_IO: "twitterapi_io",
     MODE_FEEDGRAB_X_RSS: "x_rss",
     MODE_NO_TOKEN: "x_rss",
     MODE_X_RSS: "x_rss",
@@ -118,8 +124,12 @@ def x_backend_selection_reason(backend: str) -> str:
         return "X 自动模式优先使用官方 MCP backend，适合指标、媒体和结构化数据。"
     if backend == "x_api":
         return "X MCP 不可用，X_BEARER_TOKEN/API backend 可用，因此选择官方 API backend。"
+    if backend == "twitterapi_io":
+        return "X MCP/API 不可用，TWITTERAPI_IO_KEY 可用，因此选择 TwitterAPI.io 第三方只读 backend。"
     if backend == "x_rss":
         return "X MCP/API 不可用，降级到免费 RSS；指标和视频可能不完整。"
+    if backend == "browser_session":
+        return "官方/API/RSS backend 未能返回内容，继续使用已登录浏览器会话 backend 获取可见内容。"
     if backend == "twitter-cli":
         return "显式允许 twitter-cli 调试 backend，因此选择本地 CLI。"
     return f"选择 {backend} backend。"
@@ -130,6 +140,8 @@ def x_backend_data_completeness(backend: str) -> dict[str, bool]:
         return {"metrics_complete": False, "media_complete": False}
     if backend == "browser_session":
         return {"metrics_complete": False, "media_complete": False}
+    if backend == "twitterapi_io":
+        return {"metrics_complete": True, "media_complete": False}
     return {"metrics_complete": True, "media_complete": True}
 
 
@@ -198,9 +210,19 @@ def normalize_provider_mode(mode: str | None) -> str:
         "beeclaw:xmcp": MODE_FEEDGRAB_XMCP,
         "beeclaw:x-mcp": MODE_FEEDGRAB_XMCP,
         "beeclaw:x_mcp": MODE_FEEDGRAB_XMCP,
+        "beeclaw:twitterapi": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beeclaw:twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beeclaw:x-twitterapi-io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beeclaw:x_twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "twitterapi.io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
         "beegrab:xmcp": MODE_FEEDGRAB_XMCP,
         "beegrab:x-mcp": MODE_FEEDGRAB_XMCP,
         "beegrab:x_mcp": MODE_FEEDGRAB_XMCP,
+        "beegrab:twitterapi": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beegrab:twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beegrab:x-twitterapi-io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "beegrab:x_twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
         "beeclaw:xrss": MODE_FEEDGRAB_X_RSS,
         "beeclaw:x-rss": MODE_FEEDGRAB_X_RSS,
         "beeclaw:x_rss": MODE_FEEDGRAB_X_RSS,
@@ -212,6 +234,10 @@ def normalize_provider_mode(mode: str | None) -> str:
         "feedgrab:xmcp": MODE_FEEDGRAB_XMCP,
         "feedgrab:x-mcp": MODE_FEEDGRAB_XMCP,
         "feedgrab:x_mcp": MODE_FEEDGRAB_XMCP,
+        "feedgrab:twitterapi": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "feedgrab:twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "feedgrab:x-twitterapi-io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
+        "feedgrab:x_twitterapi_io": MODE_FEEDGRAB_X_TWITTERAPI_IO,
         "feedgrab:xrss": MODE_FEEDGRAB_X_RSS,
         "feedgrab:x-rss": MODE_FEEDGRAB_X_RSS,
         "feedgrab:x_rss": MODE_FEEDGRAB_X_RSS,
@@ -266,13 +292,17 @@ def http_post_json(
     url: str,
     *,
     payload: dict[str, Any],
+    headers: dict[str, str] | None = None,
     timeout_seconds: int = 90,
 ) -> dict[str, Any]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request_headers = {"Content-Type": "application/json"}
+    if headers:
+        request_headers.update(headers)
     request = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers=request_headers,
         method="POST",
     )
     try:
@@ -835,25 +865,144 @@ class XBrowserSessionProvider:
     def __init__(self) -> None:
         self.client = WebBridgeClient(session=os.getenv("WEBBRIDGE_SESSION", "radar-x"))
 
-    def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
+    def configured_session_mode(self) -> str:
+        value = (
+            os.getenv("BEECLAW_X_BROWSER_SESSION_MODE")
+            or os.getenv("X_BROWSER_SESSION_MODE")
+            or os.getenv("BEECLAW_BROWSER_SESSION_MODE")
+            or os.getenv("BROWSER_SESSION_MODE")
+            or "auto"
+        )
+        return value.strip().lower().replace("-", "_")
+
+    def cloud_endpoint(self) -> str | None:
+        return (
+            os.getenv("BEECLAW_X_BROWSER_ENDPOINT")
+            or os.getenv("X_BROWSER_ENDPOINT")
+            or os.getenv("BEECLAW_AGENT_BROWSER_ENDPOINT")
+            or os.getenv("AGENT_BROWSER_ENDPOINT")
+        )
+
+    def headless_command(self) -> str | None:
+        return (
+            os.getenv("BEECLAW_X_BROWSER_CMD")
+            or os.getenv("X_BROWSER_CMD")
+            or os.getenv("BEECLAW_X_BROWSER_EXEC")
+            or os.getenv("X_BROWSER_EXEC")
+        )
+
+    def browser_timeout(self) -> int:
+        return int(
+            os.getenv(
+                "BEECLAW_X_BROWSER_TIMEOUT",
+                os.getenv("X_BROWSER_TIMEOUT", os.getenv("BEECLAW_AGENT_BROWSER_TIMEOUT", os.getenv("AGENT_BROWSER_TIMEOUT", "120"))),
+            )
+        )
+
+    def browser_request_payload(self, *, handle: str, max_results: int, mode: str) -> dict[str, Any]:
+        url = f"https://x.com/{urllib.parse.quote(handle)}"
+        payload = {
+            "platform": "x",
+            "task": "profile_posts",
+            "handle": handle,
+            "url": url,
+            "maxResults": max_results,
+            "includeMetrics": True,
+            "includeMedia": True,
+            "mode": mode,
+            "headless": os.getenv("BEECLAW_X_BROWSER_HEADLESS", os.getenv("AGENT_BROWSER_HEADLESS", "true")).lower() != "false",
+            "provider": os.getenv("BEECLAW_X_BROWSER_PROVIDER") or os.getenv("AGENT_BROWSER_PROVIDER"),
+            "profileDir": os.getenv("BEECLAW_X_BROWSER_PROFILE_DIR") or os.getenv("AGENT_BROWSER_PROFILE_DIR"),
+            "cookiesPath": os.getenv("BEECLAW_X_BROWSER_COOKIES_PATH") or os.getenv("AGENT_BROWSER_COOKIES_PATH"),
+            "storageState": os.getenv("BEECLAW_X_BROWSER_STORAGE_STATE") or os.getenv("AGENT_BROWSER_STORAGE_STATE"),
+            "cdpUrl": os.getenv("BEECLAW_X_BROWSER_CDP_URL") or os.getenv("AGENT_BROWSER_CDP_URL"),
+        }
+        return {key: value for key, value in payload.items() if value not in (None, "")}
+
+    def fetch_via_cloud_browser(self, *, handle: str, max_results: int, endpoint: str, mode: str) -> tuple[dict[str, Any], str]:
+        headers = {"Accept": "application/json"}
+        token = (
+            os.getenv("BEECLAW_X_BROWSER_API_KEY")
+            or os.getenv("X_BROWSER_API_KEY")
+            or os.getenv("BEECLAW_AGENT_BROWSER_API_KEY")
+            or os.getenv("AGENT_BROWSER_API_KEY")
+        )
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        payload = http_post_json(
+            endpoint,
+            payload=self.browser_request_payload(handle=handle, max_results=max_results, mode=mode),
+            headers=headers,
+            timeout_seconds=self.browser_timeout(),
+        )
+        return payload, "cloud_browser_session"
+
+    def fetch_via_headless_command(self, *, handle: str, max_results: int, command_template: str) -> tuple[dict[str, Any], str]:
+        url = f"https://x.com/{urllib.parse.quote(handle)}"
+        args = shlex.split(command_template.format(handle=handle, max_results=max_results, url=url))
+        completed = subprocess.run(args, capture_output=True, text=True, timeout=self.browser_timeout())
+        if completed.returncode != 0:
+            raise ProviderError(
+                (completed.stderr or completed.stdout or "headless browser command failed").strip(),
+                error_type="headless_browser_failed",
+            )
+        try:
+            payload = json.loads(completed.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise ProviderError("headless browser command returned invalid JSON", error_type="headless_browser_bad_response") from exc
+        if not isinstance(payload, dict):
+            raise ProviderError("headless browser command returned unsupported JSON", error_type="headless_browser_bad_response")
+        return payload, "headless_browser_session"
+
+    def fetch_via_local_webbridge(self, *, handle: str) -> tuple[dict[str, Any], str]:
         status = webbridge_status(self.client.base_url)
         if not status.get("reachable"):
             raise ProviderError(
                 f"kimi-webbridge unavailable: {status.get('error')}",
                 error_type="webbridge_unavailable",
             )
+        self.client.navigate(f"https://x.com/{urllib.parse.quote(handle)}")
+        return self.client.evaluate_json(self.extract_js), "browser_session"
+
+    def fetch_browser_payload(self, *, handle: str, max_results: int) -> tuple[dict[str, Any], str]:
+        mode = self.configured_session_mode()
+        endpoint = self.cloud_endpoint()
+        command = self.headless_command()
+        if mode in {"cloud", "cloud_browser", "cloud_browser_session"}:
+            if not endpoint:
+                raise ProviderError("cloud browser session requires BEECLAW_X_BROWSER_ENDPOINT", error_type="missing_browser_endpoint")
+            return self.fetch_via_cloud_browser(handle=handle, max_results=max_results, endpoint=endpoint, mode="cloud")
+        if mode in {"headless", "headless_browser", "headless_browser_session"}:
+            if command:
+                return self.fetch_via_headless_command(handle=handle, max_results=max_results, command_template=command)
+            if endpoint:
+                return self.fetch_via_cloud_browser(handle=handle, max_results=max_results, endpoint=endpoint, mode="headless")
+            raise ProviderError("headless browser session requires BEECLAW_X_BROWSER_CMD or BEECLAW_X_BROWSER_ENDPOINT", error_type="missing_browser_backend")
+        if mode in {"local", "local_browser", "webbridge", "browser_session"}:
+            return self.fetch_via_local_webbridge(handle=handle)
+        if endpoint:
+            return self.fetch_via_cloud_browser(handle=handle, max_results=max_results, endpoint=endpoint, mode="cloud")
+        if command:
+            return self.fetch_via_headless_command(handle=handle, max_results=max_results, command_template=command)
+        return self.fetch_via_local_webbridge(handle=handle)
+
+    def normalize_browser_items(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        items = payload.get("items") or payload.get("tweets") or data.get("items") or data.get("tweets") or []
+        return [item for item in items if isinstance(item, dict)]
+
+    def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
         handle = (account.get("account_handle") or account["account_name"]).strip().lstrip("@").replace(" ", "")
         if not handle:
             raise ProviderError("X browser mode requires account_handle or account_name", error_type="missing_account_identifier")
-        self.client.navigate(f"https://x.com/{urllib.parse.quote(handle)}")
-        payload = self.client.evaluate_json(self.extract_js)
+        payload, backend_name = self.fetch_browser_payload(handle=handle, max_results=max_results)
         if payload.get("captchaRequired"):
             raise ProviderError("X requires CAPTCHA or manual verification in Chrome", error_type="captcha_required")
         if payload.get("loginRequired"):
-            raise ProviderError("not logged in to X in Chrome", error_type="not_logged_in")
+            raise ProviderError("not logged in to X in browser session", error_type="not_logged_in")
 
         items = []
-        for raw in (payload.get("items") or [])[:max_results]:
+        for raw in self.normalize_browser_items(payload)[:max_results]:
             original_id = str(raw.get("id") or stable_content_id("x-browser", raw.get("url") or raw.get("text") or ""))
             media_assets = [asset for asset in (raw.get("media_assets") or []) if asset.get("url")]
             author_username = x_username_from_status_url(raw.get("url"))
@@ -879,7 +1028,7 @@ class XBrowserSessionProvider:
                     language=None,
                     raw_payload={
                         "source": self.source_name,
-                        "provider_backend": self.backend_name,
+                        "provider_backend": backend_name,
                         **raw,
                         "author_username": author_username,
                         "requested_handle": handle,
@@ -958,6 +1107,153 @@ class XApiProvider:
             platform=self.platform,
             items=items,
             next_cursor=payload.get("meta", {}).get("next_token"),
+            last_seen_original_id=items[0].original_content_id if items else None,
+        )
+
+
+def media_assets_from_twitterapi_io_tweet(tweet: dict[str, Any]) -> list[dict[str, Any]]:
+    """Best-effort media extraction from TwitterAPI.io tweet payloads.
+
+    TwitterAPI.io has evolved response shapes across endpoints. Keep this
+    defensive and only emit assets with explicit URLs.
+    """
+    raw_media: list[Any] = []
+    extended = tweet.get("extendedEntities") or tweet.get("extended_entities") or {}
+    entities = tweet.get("entities") or {}
+    for value in (
+        extended.get("media") if isinstance(extended, dict) else None,
+        entities.get("media") if isinstance(entities, dict) else None,
+        tweet.get("media"),
+        tweet.get("medias"),
+        tweet.get("photos"),
+        tweet.get("videos"),
+    ):
+        if isinstance(value, list):
+            raw_media.extend(value)
+    for key in ("mediaUrls", "media_urls", "imageUrls", "image_urls", "videoUrls", "video_urls"):
+        value = tweet.get(key)
+        if isinstance(value, list):
+            raw_media.extend({"url": item} for item in value if item)
+
+    assets: list[dict[str, Any]] = []
+    for media in raw_media:
+        if isinstance(media, str):
+            media = {"url": media}
+        if not isinstance(media, dict):
+            continue
+        asset = compact_media_asset(
+            {
+                "type": media.get("type") or media.get("media_type") or media.get("mediaType"),
+                "url": media.get("url") or media.get("media_url") or media.get("mediaUrl") or media.get("preview_image_url"),
+                "download_url": media.get("download_url") or media.get("video_url") or media.get("videoUrl") or media.get("url"),
+                "thumbnail_url": media.get("thumbnail_url") or media.get("preview_image_url") or media.get("media_url_https"),
+                "alt_text": media.get("alt_text") or media.get("altText"),
+                "width": media.get("width"),
+                "height": media.get("height"),
+            }
+        )
+        if asset:
+            assets.append(asset)
+    return assets
+
+
+class TwitterApiIoProvider:
+    platform = PLATFORM_X
+    source_name = X_PUBLIC_PROVIDER
+    backend_name = "twitterapi_io"
+
+    def __init__(self) -> None:
+        self.api_key = require_env("TWITTERAPI_IO_KEY")
+        self.base_url = os.getenv("TWITTERAPI_IO_BASE_URL", "https://api.twitterapi.io").rstrip("/")
+
+    def _last_tweets_payload(self, *, handle: str, cursor: str) -> dict[str, Any]:
+        headers = {"X-API-Key": self.api_key}
+        params = {
+            "userName": handle,
+            "includeReplies": "false",
+            "cursor": cursor,
+        }
+        for attempt in range(2):
+            try:
+                return http_json(
+                    f"{self.base_url}/twitter/user/last_tweets",
+                    headers=headers,
+                    params=params,
+                )
+            except ProviderError as exc:
+                if exc.status_code == 429 and attempt == 0:
+                    delay = float(os.getenv("TWITTERAPI_IO_RETRY_SLEEP_SECONDS", "5.5"))
+                    time.sleep(delay)
+                    continue
+                raise
+        raise ProviderError("TwitterAPI.io rate limit retry exhausted", error_type="rate_limited", status_code=429)
+
+    def fetch(self, account: dict[str, Any], *, max_results: int) -> FetchResult:
+        handle = normalize_x_handle(
+            account.get("account_handle")
+            or account.get("account_url")
+            or account.get("account_name")
+            or ""
+        )
+        if not handle:
+            raise ProviderError("TwitterAPI.io mode requires an X handle or profile URL.", error_type="missing_account_identifier")
+        tweets: list[dict[str, Any]] = []
+        next_cursor: str | None = None
+        cursor = ""
+        while len(tweets) < max_results:
+            payload = self._last_tweets_payload(handle=handle, cursor=cursor)
+            if str(payload.get("status") or "success").lower() == "error":
+                message = str(payload.get("message") or "TwitterAPI.io returned an error")
+                lowered = message.lower()
+                if "credit" in lowered or "payment" in lowered:
+                    raise ProviderError(message, error_type="credits_depleted", status_code=402)
+                raise ProviderError(message, error_type="twitterapi_io_error")
+            data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+            tweets.extend(tweet for tweet in (payload.get("tweets") or data.get("tweets") or []) if isinstance(tweet, dict))
+            next_cursor = payload.get("next_cursor") or data.get("next_cursor") or data.get("nextCursor")
+            has_next_page = payload.get("has_next_page")
+            if has_next_page is None:
+                has_next_page = data.get("has_next_page") or data.get("hasNextPage")
+            if not has_next_page or not next_cursor:
+                break
+            cursor = str(next_cursor)
+
+        items: list[ContentItem] = []
+        for tweet in tweets[:max_results]:
+            tweet_id = str(tweet.get("id") or stable_content_id("twitterapi-io", tweet.get("url") or tweet.get("text") or ""))
+            author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
+            username = author.get("userName") or author.get("username") or handle
+            media_assets = media_assets_from_twitterapi_io_tweet(tweet)
+            items.append(
+                ContentItem(
+                    platform=self.platform,
+                    original_content_id=tweet_id,
+                    title=None,
+                    text=tweet.get("text"),
+                    published_at=tweet.get("createdAt") or tweet.get("created_at"),
+                    url=tweet.get("url") or f"https://x.com/{username}/status/{tweet_id}",
+                    view_count=int_or_none(tweet.get("viewCount") or tweet.get("views")),
+                    like_count=int_or_none(tweet.get("likeCount") or tweet.get("likes")),
+                    comment_count=int_or_none(tweet.get("replyCount") or tweet.get("comments")),
+                    share_count=int_or_none(tweet.get("retweetCount") or tweet.get("retweets")),
+                    media_type=media_type_from_assets("post", media_assets),
+                    language=tweet.get("lang"),
+                    raw_payload={
+                        **tweet,
+                        "source": self.source_name,
+                        "provider_backend": self.backend_name,
+                        "requested_handle": handle,
+                        "metrics_complete": True,
+                        "media_complete": bool(media_assets),
+                    },
+                    media_assets=media_assets,
+                )
+            )
+        return FetchResult(
+            account_id=int(account["id"]),
+            platform=self.platform,
+            items=items,
+            next_cursor=next_cursor,
             last_seen_original_id=items[0].original_content_id if items else None,
         )
 
@@ -1466,6 +1762,12 @@ PROVIDER_REGISTRY = {
         PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
         PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
     },
+    MODE_FEEDGRAB_X_TWITTERAPI_IO: {
+        PLATFORM_X: TwitterApiIoProvider,
+        PLATFORM_YOUTUBE: unsupported_provider_factory(PLATFORM_YOUTUBE),
+        PLATFORM_LINKEDIN: unsupported_provider_factory(PLATFORM_LINKEDIN),
+        PLATFORM_INSTAGRAM: unsupported_provider_factory(PLATFORM_INSTAGRAM),
+    },
     MODE_FEEDGRAB_X_RSS: {
         PLATFORM_X: BeeclawXRssProvider,
         PLATFORM_YOUTUBE: unsupported_provider_factory(PLATFORM_YOUTUBE),
@@ -1500,7 +1802,7 @@ PROVIDER_REGISTRY = {
 }
 
 AUTO_MODE_ORDER = {
-    PLATFORM_X: (MODE_FEEDGRAB_XMCP, MODE_API, MODE_FEEDGRAB_X_RSS),
+    PLATFORM_X: (MODE_FEEDGRAB_XMCP, MODE_API, MODE_FEEDGRAB_X_TWITTERAPI_IO, MODE_FEEDGRAB_X_RSS, MODE_BROWSER_SESSION),
     PLATFORM_YOUTUBE: (MODE_NO_TOKEN, MODE_API),
     PLATFORM_LINKEDIN: (MODE_API,),
     PLATFORM_INSTAGRAM: (MODE_API,),
@@ -1533,6 +1835,17 @@ class AutoProvider:
                 if mode not in self.providers:
                     self.providers[mode] = build_provider(self.platform, mode=mode)
                 result = self.providers[mode].fetch(account, max_results=max_results)
+                if not result.items:
+                    attempts.append(
+                        {
+                            "backend": backend,
+                            "mode": mode,
+                            "status": "failed",
+                            "error": "empty_result",
+                            "message": "backend returned no content items",
+                        }
+                    )
+                    continue
                 if self.platform == PLATFORM_X:
                     success_attempts = [
                         *attempts,

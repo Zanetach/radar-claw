@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="54%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1E3A8A" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-18%" y="-18%" width="136%" height="136%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 44px; font-weight: 850; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 24px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 30px; font-weight: 820; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 21px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 17px; fill: #64748B; letter-spacing: 0; }
+      .tiny { font-size: 15px; fill: #64748B; letter-spacing: 0; }
+      .white { fill: #FFFFFF; }
+      .blueText { fill: #1D4ED8; font-weight: 800; }
+      .tealText { fill: #0F766E; font-weight: 800; }
+      .orangeText { fill: #C2410C; font-weight: 800; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.25; }
+      .soft { fill: #F8FAFC; stroke: #E2E8F0; stroke-width: 1; }
+      .blueSoft { fill: #EFF6FF; stroke: #BFDBFE; stroke-width: 1.2; }
+      .tealSoft { fill: #F0FDFA; stroke: #99F6E4; stroke-width: 1.2; }
+      .orangeSoft { fill: #FFF7ED; stroke: #FED7AA; stroke-width: 1.2; }
+      .line { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrowBlue); }
+      .lineTeal { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowTeal); }
+      .label { font-size: 16px; font-weight: 760; fill: #0F172A; letter-spacing: 0; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1200" rx="36" fill="url(#bg)"/>
+  <path d="M1298 0 C1510 88 1592 226 1800 284 L1800 0 Z" fill="#DBEAFE" opacity="0.75"/>
+  <path d="M0 1016 C250 920 426 1076 670 980 C930 879 1040 1075 1325 980 C1518 916 1645 1052 1800 966 L1800 1200 L0 1200 Z" fill="#CCFBF1" opacity="0.25"/>
+
+  <g class="font">
+    <g transform="translate(78 58)">
+      <rect x="0" y="0" width="82" height="82" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="41" y="54" text-anchor="middle" font-size="39" font-weight="900" fill="#FFFFFF">R</text>
+    </g>
+    <text x="186" y="94" class="title">Radar / Beeclaw：把“能爬”变成“可生产采集”</text>
+    <text x="188" y="135" class="subtitle">Codex 可以临时写代码深爬；Radar 让 AI 员工稳定、可追踪、可复用地采集平台数据。</text>
+
+    <rect x="1238" y="76" width="447" height="54" rx="27" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <circle cx="1274" cy="103" r="8" fill="#22C55E"/>
+    <text x="1296" y="110" font-size="19" font-weight="760" fill="#334155">面向千蜂 AI / Hermes Agent Runtime</text>
+
+    <rect x="78" y="190" width="535" height="500" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="108" y="224" width="96" height="42" rx="21" fill="#F1F5F9" stroke="#CBD5E1"/>
+    <text x="156" y="252" text-anchor="middle" class="label">临时能力</text>
+    <text x="108" y="310" class="section">Codex / web_search / 临时代码</text>
+    <text x="108" y="352" class="body">适合一次性搜索、查资料、快速 PoC。</text>
+
+    <g transform="translate(108 390)">
+      <rect x="0" y="0" width="475" height="48" rx="14" class="soft"/>
+      <text x="20" y="31" class="body">临时查公开资料、找文档、看网页摘要</text>
+      <rect x="0" y="62" width="475" height="48" rx="14" class="soft"/>
+      <text x="20" y="93" class="body">可以写脚本深爬：requests / Playwright / CLI</text>
+      <rect x="0" y="124" width="475" height="48" rx="14" class="soft"/>
+      <text x="20" y="155" class="body">适合单次抓取、验证可行性、人工调试</text>
+      <rect x="0" y="186" width="475" height="64" rx="14" class="orangeSoft"/>
+      <text x="20" y="213" font-size="19" font-weight="760" fill="#334155">不负责长期任务、状态、去重、</text>
+      <text x="20" y="239" font-size="19" font-weight="760" fill="#334155">审计和下游交接</text>
+    </g>
+    <text x="108" y="674" class="small">核心问题：每次都像重新做一个小项目，难以沉淀为平台能力。</text>
+
+    <rect x="1187" y="190" width="535" height="500" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="1217" y="224" width="112" height="42" rx="21" fill="#ECFDF5" stroke="#99F6E4"/>
+    <text x="1273" y="252" text-anchor="middle" class="label">产品能力</text>
+    <text x="1217" y="310" class="section">Radar / Beeclaw 数据采集工具</text>
+    <text x="1217" y="352" class="body">适合 AI 员工长期调用、批量采集、闭环交付。</text>
+
+    <g transform="translate(1217 390)">
+      <rect x="0" y="0" width="475" height="52" rx="14" class="tealSoft"/>
+      <text x="20" y="33" font-size="19" fill="#334155">MCP 工具入口：AI 员工一句话创建任务</text>
+      <rect x="0" y="64" width="475" height="58" rx="14" class="tealSoft"/>
+      <text x="20" y="88" font-size="19" fill="#334155">统一 provider：X / YouTube / 小红书</text>
+      <text x="20" y="112" font-size="19" fill="#334155">Reddit / RSS / Web</text>
+      <rect x="0" y="136" width="475" height="58" rx="14" class="tealSoft"/>
+      <text x="20" y="160" font-size="19" fill="#334155">标准化入库：raw content / metrics</text>
+      <text x="20" y="184" font-size="19" fill="#334155">media / raw payload</text>
+      <rect x="0" y="208" width="475" height="58" rx="14" class="blueSoft"/>
+      <text x="20" y="232" font-size="19" font-weight="760" fill="#334155">支持任务状态、失败重试、媒体索引</text>
+      <text x="20" y="256" font-size="19" font-weight="760" fill="#334155">导出和 Agent 交接</text>
+    </g>
+    <text x="1217" y="674" class="small">核心价值：让所有 AI 员工复用同一套采集基础设施。</text>
+
+    <g transform="translate(665 294)">
+      <rect x="0" y="0" width="462" height="252" rx="30" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <text x="231" y="58" text-anchor="middle" class="section">关键分界线</text>
+      <text x="62" y="104" class="body">Codex 的强项是</text>
+      <text x="228" y="104" class="blueText" font-size="24">临时工程执行</text>
+      <text x="62" y="146" class="body">Radar 的强项是</text>
+      <text x="228" y="146" class="tealText" font-size="24">平台化采集闭环</text>
+      <rect x="54" y="178" width="354" height="44" rx="22" fill="url(#blue)" opacity="0.95"/>
+      <text x="231" y="207" text-anchor="middle" font-size="20" font-weight="800" fill="#FFFFFF">从“写一个脚本”到“交付一个工具”</text>
+    </g>
+    <path d="M615 418 C650 418 640 418 664 418" class="line"/>
+    <path d="M1128 418 C1160 418 1154 418 1186 418" class="lineTeal"/>
+
+    <rect x="96" y="720" width="1608" height="300" rx="32" class="card" filter="url(#shadow)"/>
+    <text x="132" y="772" class="section">AI 员工里的标准采集闭环</text>
+    <text x="132" y="812" class="body">用户不用关心具体爬虫实现，只需要描述目标；Radar 负责执行、存储和反馈。</text>
+
+    <g transform="translate(132 858)">
+      <rect x="0" y="0" width="214" height="96" rx="22" class="blueSoft"/>
+      <text x="107" y="39" text-anchor="middle" class="label">用户指令</text>
+      <text x="107" y="68" text-anchor="middle" class="small">@账号 / 关键词 / URL</text>
+
+      <path d="M224 48 L292 48" class="line"/>
+      <rect x="304" y="0" width="214" height="96" rx="22" class="blueSoft"/>
+      <text x="411" y="39" text-anchor="middle" class="label">AI 员工理解</text>
+      <text x="411" y="68" text-anchor="middle" class="small">解析平台、范围、规则</text>
+
+      <path d="M528 48 L596 48" class="line"/>
+      <rect x="608" y="0" width="214" height="96" rx="22" class="tealSoft"/>
+      <text x="715" y="39" text-anchor="middle" class="label">Radar MCP</text>
+      <text x="715" y="68" text-anchor="middle" class="small">创建 collection task</text>
+
+      <path d="M832 48 L900 48" class="lineTeal"/>
+      <rect x="912" y="0" width="214" height="96" rx="22" class="tealSoft"/>
+      <text x="1019" y="39" text-anchor="middle" class="label">Beeclaw Providers</text>
+      <text x="1019" y="68" text-anchor="middle" class="small">MCP / API / RSS / CLI</text>
+
+      <path d="M1136 48 L1204 48" class="lineTeal"/>
+      <rect x="1216" y="0" width="214" height="96" rx="22" class="tealSoft"/>
+      <text x="1323" y="39" text-anchor="middle" class="label">结构化存储</text>
+      <text x="1323" y="68" text-anchor="middle" class="small">内容、媒体、指标、日志</text>
+    </g>
+
+    <g transform="translate(132 980)">
+      <rect x="0" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="104" y="27" text-anchor="middle" class="tiny" font-weight="760">X / Twitter</text>
+      <rect x="224" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="328" y="27" text-anchor="middle" class="tiny" font-weight="760">YouTube</text>
+      <rect x="448" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="552" y="27" text-anchor="middle" class="tiny" font-weight="760">小红书</text>
+      <rect x="672" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="776" y="27" text-anchor="middle" class="tiny" font-weight="760">Reddit</text>
+      <rect x="896" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="1000" y="27" text-anchor="middle" class="tiny" font-weight="760">RSS / Web</text>
+      <rect x="1120" y="0" width="208" height="42" rx="21" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="1224" y="27" text-anchor="middle" class="tiny" font-weight="760">GitHub / URL</text>
+      <rect x="1344" y="0" width="208" height="42" rx="21" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="1448" y="27" text-anchor="middle" class="tiny" font-weight="760">交给整理 / 发布 Agent</text>
+    </g>
+
+    <rect x="344" y="1064" width="1112" height="58" rx="29" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <text x="900" y="1101" text-anchor="middle" font-size="23" font-weight="820" fill="#0F172A">
+      结论：Codex 能帮你临时写爬虫；Radar 让采集成为 AI 员工可调用、可运维、可交接的标准能力。
+    </text>
+  </g>
+</svg>

@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1125" viewBox="0 0 1800 1125">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="55%" stop-color="#EEF6FF"/>
+      <stop offset="100%" stop-color="#F9FAFB"/>
+    </linearGradient>
+    <linearGradient id="primary" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#1E3A8A"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#1E3A8A" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 54px; font-weight: 850; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 23px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 25px; font-weight: 800; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 17px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 14px; fill: #64748B; letter-spacing: 0; }
+      .mini { font-size: 13px; fill: #64748B; letter-spacing: 0; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.2; }
+      .soft { fill: #F8FAFC; stroke: #E2E8F0; stroke-width: 1; }
+      .num { font-size: 22px; font-weight: 900; fill: #FFFFFF; }
+      .stepTitle { font-size: 22px; font-weight: 800; fill: #0F172A; }
+      .pill { font-size: 14px; font-weight: 700; fill: #0F172A; }
+      .arrowLine { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrow); }
+      .loopLine { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowTeal); stroke-dasharray: 9 8; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1125" rx="34" fill="url(#bg)"/>
+  <path d="M1220 0 C1410 100 1530 210 1800 225 L1800 0 Z" fill="#DBEAFE" opacity="0.72"/>
+  <path d="M0 955 C260 890 455 1018 705 936 C920 866 1125 1020 1375 930 C1550 866 1666 970 1800 910 L1800 1125 L0 1125 Z" fill="#CCFBF1" opacity="0.28"/>
+
+  <g class="font">
+    <g transform="translate(80 64)">
+      <rect x="0" y="0" width="78" height="78" rx="22" fill="url(#primary)" filter="url(#softShadow)"/>
+      <text x="39" y="51" text-anchor="middle" font-size="38" font-weight="900" fill="#FFFFFF">R</text>
+    </g>
+    <text x="180" y="104" class="title">Radar 数据采集用户流程图</text>
+    <text x="183" y="143" class="subtitle">用户只和 AI 员工对话；AI 员工调用 Radar 工具完成采集、入库、回传，形成可追踪的数据闭环</text>
+
+    <rect x="1320" y="72" width="400" height="54" rx="27" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <text x="1360" y="106" class="body" font-weight="800">用户视角：说清楚目标，系统完成执行</text>
+
+    <rect x="76" y="198" width="1648" height="474" rx="34" class="card" filter="url(#shadow)"/>
+    <text x="118" y="250" class="section">主流程：从一句话到可用数据</text>
+    <text x="118" y="286" class="body">每一步都有任务状态、执行记录和失败原因，AI 员工拿到的是结构化反馈，不是零散爬虫日志。</text>
+
+    <g transform="translate(118 335)">
+      <rect x="0" y="0" width="235" height="238" rx="26" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <circle cx="36" cy="38" r="24" fill="url(#primary)"/>
+      <text x="36" y="46" text-anchor="middle" class="num">1</text>
+      <text x="72" y="46" class="stepTitle">用户下达任务</text>
+      <text x="26" y="92" class="body">用自然语言描述采集目标：</text>
+      <text x="26" y="124" class="small">账号、关键词、URL、Excel</text>
+      <text x="26" y="150" class="small">平台、时间范围、内容类型</text>
+      <rect x="24" y="176" width="187" height="38" rx="12" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="118" y="201" text-anchor="middle" class="pill">例如：采集 X 最近 7 天</text>
+
+      <line x1="253" y1="119" x2="315" y2="119" class="arrowLine"/>
+
+      <rect x="333" y="0" width="235" height="238" rx="26" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <circle cx="369" cy="38" r="24" fill="url(#primary)"/>
+      <text x="369" y="46" text-anchor="middle" class="num">2</text>
+      <text x="405" y="46" class="stepTitle">AI 员工理解</text>
+      <text x="359" y="92" class="body">抽取采集意图：</text>
+      <text x="359" y="124" class="small">目标账号 / 关键词</text>
+      <text x="359" y="150" class="small">过滤规则 / 是否下载媒体</text>
+      <rect x="357" y="176" width="187" height="38" rx="12" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="450" y="201" text-anchor="middle" class="pill">生成结构化任务参数</text>
+
+      <line x1="586" y1="119" x2="648" y2="119" class="arrowLine"/>
+
+      <rect x="666" y="0" width="235" height="238" rx="26" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <circle cx="702" cy="38" r="24" fill="url(#primary)"/>
+      <text x="702" y="46" text-anchor="middle" class="num">3</text>
+      <text x="738" y="46" class="stepTitle">调用 Radar</text>
+      <text x="692" y="92" class="body">通过 Radar MCP 创建任务：</text>
+      <text x="692" y="124" class="small">collection task</text>
+      <text x="692" y="150" class="small">queue / retry / cancel</text>
+      <rect x="690" y="176" width="187" height="38" rx="12" fill="#EEF2FF" stroke="#C7D2FE"/>
+      <text x="783" y="201" text-anchor="middle" class="pill">任务进入执行队列</text>
+
+      <line x1="919" y1="119" x2="981" y2="119" class="arrowLine"/>
+
+      <rect x="999" y="0" width="235" height="238" rx="26" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <circle cx="1035" cy="38" r="24" fill="url(#primary)"/>
+      <text x="1035" y="46" text-anchor="middle" class="num">4</text>
+      <text x="1071" y="46" class="stepTitle">执行采集</text>
+      <text x="1025" y="92" class="body">Beeclaw 自动选择 backend：</text>
+      <text x="1025" y="124" class="small">X MCP / API / RSS</text>
+      <text x="1025" y="150" class="small">平台 MCP / CLI / Web reader</text>
+      <rect x="1023" y="176" width="187" height="38" rx="12" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="1116" y="201" text-anchor="middle" class="pill">抓正文、媒体、指标</text>
+
+      <line x1="1252" y1="119" x2="1314" y2="119" class="arrowLine"/>
+
+      <rect x="1332" y="0" width="235" height="238" rx="26" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <circle cx="1368" cy="38" r="24" fill="url(#primary)"/>
+      <text x="1368" y="46" text-anchor="middle" class="num">5</text>
+      <text x="1404" y="46" class="stepTitle">数据入库</text>
+      <text x="1358" y="92" class="body">沉淀为可复用数据：</text>
+      <text x="1358" y="124" class="small">原始内容库</text>
+      <text x="1358" y="150" class="small">媒体资产库 / run report</text>
+      <rect x="1356" y="176" width="187" height="38" rx="12" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="1449" y="201" text-anchor="middle" class="pill">可查、可导出、可重试</text>
+    </g>
+
+    <rect x="76" y="716" width="796" height="280" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="116" y="766" class="section">采集完成后，用户看到什么</text>
+    <g transform="translate(116 804)">
+      <rect x="0" y="0" width="335" height="56" rx="16" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="22" y="35" class="body"><tspan font-weight="800">采集报告：</tspan>成功数、失败数、媒体数</text>
+      <rect x="0" y="72" width="335" height="56" rx="16" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="22" y="107" class="body"><tspan font-weight="800">内容列表：</tspan>原文、链接、发布时间</text>
+      <rect x="0" y="144" width="335" height="56" rx="16" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="22" y="179" class="body"><tspan font-weight="800">异常说明：</tspan>限流、权限、无内容</text>
+
+      <rect x="385" y="0" width="335" height="56" rx="16" fill="#EEF2FF" stroke="#C7D2FE"/>
+      <text x="407" y="35" class="body"><tspan font-weight="800">可继续：</tspan>重试、扩展账号、改规则</text>
+      <rect x="385" y="72" width="335" height="56" rx="16" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="407" y="107" class="body"><tspan font-weight="800">可交接：</tspan>给内容整理 Agent</text>
+      <rect x="385" y="144" width="335" height="56" rx="16" fill="#ECFDF5" stroke="#A7F3D0"/>
+      <text x="407" y="179" class="body"><tspan font-weight="800">可沉淀：</tspan>形成长期内容数据库</text>
+    </g>
+
+    <rect x="928" y="716" width="796" height="280" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="968" y="766" class="section">闭环关系：采集和后续处理解耦</text>
+    <g transform="translate(968 805)">
+      <rect x="0" y="0" width="178" height="72" rx="20" fill="url(#dark)" filter="url(#softShadow)"/>
+      <text x="89" y="32" text-anchor="middle" font-size="19" font-weight="850" fill="#FFFFFF">原始数据</text>
+      <text x="89" y="56" text-anchor="middle" font-size="14" fill="#CBD5E1">Radar 负责</text>
+
+      <line x1="196" y1="36" x2="278" y2="36" class="arrowLine"/>
+
+      <rect x="298" y="0" width="178" height="72" rx="20" fill="#FFFFFF" stroke="#BFDBFE"/>
+      <text x="387" y="32" text-anchor="middle" class="body" font-weight="850">整理分析</text>
+      <text x="387" y="56" text-anchor="middle" class="small">AI 员工处理</text>
+
+      <line x1="494" y1="36" x2="576" y2="36" class="arrowLine"/>
+
+      <rect x="596" y="0" width="178" height="72" rx="20" fill="#FFFFFF" stroke="#BFDBFE"/>
+      <text x="685" y="32" text-anchor="middle" class="body" font-weight="850">发布/推送</text>
+      <text x="685" y="56" text-anchor="middle" class="small">下游系统处理</text>
+
+      <path d="M685 93 C650 170 120 170 89 93" class="loopLine"/>
+      <text x="386" y="154" text-anchor="middle" class="body" font-weight="800" fill="#0F766E">新的判断和规则，可以再次触发采集任务</text>
+      <text x="386" y="186" text-anchor="middle" class="small">Radar 始终保存原始来源、媒体资产、执行报告和失败记录</text>
+    </g>
+
+    <rect x="76" y="1030" width="1648" height="62" rx="24" fill="#0F172A" filter="url(#softShadow)"/>
+    <text x="118" y="1068" font-size="20" font-weight="800" fill="#FFFFFF">一句话说明：</text>
+    <text x="250" y="1068" font-size="20" fill="#D7EAFE">用户提出采集目标，AI 员工调用 Radar 执行采集，Radar 把数据变成可查询、可复用、可交接的原始内容资产。</text>
+  </g>
+</svg>

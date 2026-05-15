@@ -2,6 +2,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -166,6 +167,119 @@ class BeeclawAgentCliTests(unittest.TestCase):
 
         self.assertTrue(script.exists())
         self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+
+    def test_unified_install_script_help_lists_core_steps(self):
+        script = Path("tools/install_beeclaw.sh")
+
+        self.assertTrue(script.exists())
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        result = subprocess.run([str(script.resolve()), "--help"], check=False, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("install-deps", result.stdout)
+        self.assertIn("install-hermes", result.stdout)
+        self.assertIn("--no-start", result.stdout)
+        self.assertIn("doctor", result.stdout)
+
+    def test_release_package_script_help_is_available(self):
+        script = Path("tools/package_beeclaw_release.sh")
+
+        self.assertTrue(script.exists())
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        result = subprocess.run([str(script.resolve()), "--help"], check=False, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("beeclaw-radar", result.stdout)
+        self.assertIn("dist", result.stdout)
+
+    def test_root_env_example_documents_runtime_modes(self):
+        env_example = Path(".env.example")
+
+        self.assertTrue(env_example.exists())
+        text = env_example.read_text(encoding="utf-8")
+        self.assertIn("RADAR_BASE_URL", text)
+        self.assertIn("BEECLAW_X_BROWSER_SESSION_MODE", text)
+        self.assertIn("BEECLAW_X_BROWSER_ENDPOINT", text)
+        self.assertIn("RADAR_BACKEND_MCP_MODE", text)
+
+    def test_package_json_exposes_npx_installer(self):
+        package_json = Path("package.json")
+
+        self.assertTrue(package_json.exists())
+        payload = json.loads(package_json.read_text(encoding="utf-8"))
+        self.assertEqual(payload["bin"]["beeclaw-radar"], "tools/npx-install.mjs")
+        self.assertIn("tools/npx-install.mjs", payload["files"])
+        self.assertIn("crawler", payload["files"])
+
+    def test_npx_installer_help_lists_actions(self):
+        script = Path("tools/npx-install.mjs")
+
+        self.assertTrue(script.exists())
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        result = subprocess.run(["node", str(script), "--help"], check=False, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("npx", result.stdout)
+        self.assertIn("install", result.stdout)
+        self.assertIn("start-api", result.stdout)
+        self.assertIn("--no-start", result.stdout)
+        self.assertIn("doctor", result.stdout)
+
+    def test_root_install_script_wraps_npx_autostart(self):
+        script = Path("install.sh")
+
+        self.assertTrue(script.exists())
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        result = subprocess.run([str(script.resolve()), "--help"], check=False, capture_output=True, text=True)
+
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("curl", result.stdout)
+        self.assertIn("npx github:Zanetach/radar-claw install", result.stdout)
+        self.assertIn("--no-start", result.stdout)
+
+    def test_npx_installer_refuses_to_delete_unrelated_install_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "existing"
+            target.mkdir()
+            keep = target / "keep.txt"
+            keep.write_text("do not delete", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    "node",
+                    "tools/npx-install.mjs",
+                    "install",
+                    "--dir",
+                    str(target),
+                    "--no-start",
+                    "--skip-hermes",
+                    "--skip-clis",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(keep.exists())
+            self.assertIn("Refusing to overwrite", result.stderr)
+
+    def test_run_radar_api_derives_host_and_port_from_base_url(self):
+        script = Path("tools/run_radar_api.sh")
+
+        text = script.read_text(encoding="utf-8")
+        self.assertIn("RADAR_BASE_URL", text)
+        self.assertIn("urlparse", text)
+        self.assertIn("RADAR_DERIVED_HOST", text)
+        self.assertIn("RADAR_DERIVED_PORT", text)
+        self.assertIn("RADAR_DERIVED_BIND", text)
+
+    def test_run_radar_api_has_pip_fallback_without_uv(self):
+        text = Path("tools/run_radar_api.sh").read_text(encoding="utf-8")
+
+        self.assertIn("python3 -m venv", text)
+        self.assertIn("ensurepip", text)
+        self.assertIn("pip install", text)
 
 
 if __name__ == "__main__":

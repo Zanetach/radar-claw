@@ -60,13 +60,14 @@ CLI and MCP are equivalent integration paths at the Radar boundary: both call th
 - Preserve source URLs, media metadata, metrics, and raw payload.
 - For large jobs, create queued tasks and let the worker execute them; do not pretend queued tasks have already collected content.
 - Prefer named strategies from `radar_list_strategies`.
-- For X, use `auto` by default. Radar exposes the public provider as `beeclaw:x` and auto-selects the execution backend in this order: `x_mcp` -> `x_api` -> `x_rss`; `twitter-cli` and `browser_session` are optional/debug backends, not the default production path. Do not force XMCP unless the user explicitly asks for XMCP, production API/credits validation, or a named strategy requires it.
+- For X, use `auto` by default. Radar exposes the public provider as `beeclaw:x` and auto-selects the execution backend in this order: `x_mcp` -> `x_api` -> `twitterapi_io` -> `x_rss` -> browser-session backends. Browser-session can be `cloud_browser_session`, `headless_browser_session`, or local `browser_session` depending on Radar configuration. The goal is to return useful collected content; do not stop at credits/API failures if a later backend can satisfy the user's requested result. Do not force XMCP unless the user explicitly asks for XMCP, production API/credits validation, or a named strategy requires it.
 - Before a real X production rollout or batch increase, use `radar_xmcp_pressure_test` with `execute=false` to estimate selected accounts and API call volume. Use `execute=true` only after the user confirms credits are available.
 - Use `beeclaw:x_rss` or `no-token` as the free fallback when X API/XMCP is unavailable or credits are insufficient. It can accept normal `@handle` or profile URL input.
 - For non-X platforms, prefer URL/content collection through Beeclaw first: XHS, WeChat, YouTube, Bilibili, Douyin, Weibo, Zhihu, GitHub, Feishu, Kdocs, Youdao, RSS, Telegram, Reddit, HackerNews, Medium, LinuxDo, IDCFlare, Xiaoyuzhou, Ximalaya, and generic Web URLs.
-- Treat `beeclaw:*` as the public provider and the listed backend as an implementation detail. Examples: `beeclaw:youtube -> yt-dlp/youtube_api/rss`, `beeclaw:xhs -> xiaohongshu-mcp/xhs-cli/universal_reader`, `beeclaw:github -> gh/github_api/universal_reader`, `beeclaw:rss -> rss_parser/universal_reader`, `beeclaw:web -> Jina Reader/universal_reader`. Current executable URL backends include Jina Reader for web, yt-dlp for YouTube, gh for GitHub, xhs-cli for XHS, rdt-cli for Reddit, and rss_parser for RSS/Atom feeds. RSS/Atom collection stores each feed entry as a separate raw content item. Unsupported or failed URL backends fall back to UniversalReader.
-- If a non-X task only provides an account name or keyword and Radar has no dedicated provider for that platform yet, ask for a URL or create a structured task that clearly reports the provider limitation.
-- Use browser session only for debugging or low-volume validation.
+- Treat `beeclaw:*` as the public provider and the listed backend as an implementation detail. Examples: `beeclaw:youtube -> youtube_api/yt-dlp/rss`, `beeclaw:xhs -> xiaohongshu-mcp/xhs-cli/universal_reader`, `beeclaw:github -> gh/github_api/universal_reader`, `beeclaw:rss -> rss_parser/universal_reader`, `beeclaw:web -> Jina Reader/universal_reader`. Current executable URL backends include Jina Reader for web, yt-dlp for YouTube, gh for GitHub, xhs-cli for XHS, rdt-cli for Reddit, and rss_parser for RSS/Atom feeds. Keyword collection is available for X, XHS, YouTube, and Reddit. RSS/Atom collection stores each feed entry as a separate raw content item. Unsupported or failed URL backends fall back to UniversalReader.
+- Do not ask the user to choose a backend such as MCP, CLI, API, browser, Jina, or RSS. The user only provides the collection target; Radar/Beeclaw chooses and records the backend attempts.
+- If a non-X task only provides an account name or keyword and Radar has no dedicated provider for that platform yet, return a structured provider limitation with the next required input, usually a source URL or an enabled platform MCP. Do not ask the user to choose an implementation backend.
+- Use browser session as the final X fallback when official/API/RSS backends cannot return content and an authenticated cloud/headless/local browser session is available.
 - If metrics are unavailable, state that they are unavailable; never fabricate metrics.
 - Do not expose API tokens, cookies, or OAuth secrets.
 - If the user asks about platform MCP integration, call `radar_list_mcp_integrations`. Explain that `Radar MCP` is the AI employee tool, while `X MCP`, `小红书 MCP`, and future platform MCPs are managed by the Qianfeng platform `MCP Manager`. Radar calls those backend MCPs through the Manager/Gateway; normal AI employees should not bypass Radar by directly composing raw platform tools for production collection.
@@ -127,8 +128,8 @@ Every collection task response includes `agent_feedback` for the AI employee:
 - `message`: concise user-facing result summary.
 - `content_ids`: raw content IDs produced by the task.
 - `top_contents`: first collected items with source URL, metrics, provider, and media count.
-- `execution_backend`: the selected backend, for example `x_mcp`, `x_api`, `x_rss`, `Jina Reader`, `yt-dlp`, `gh`, `xhs-cli`, `rdt-cli`, `rss_parser`, or `beeclaw:universal_reader`. `provider` is the public Beeclaw route, for X normally `beeclaw:x`.
-- `backend_attempts`: shows failed and successful backend attempts. For X it explains `x_mcp/x_api/x_rss` auto routing; for Beeclaw URL collection it explains CLI/Jina/UniversalReader fallback.
+- `execution_backend`: the selected backend, for example `x_mcp`, `x_api`, `twitterapi_io`, `x_rss`, `Jina Reader`, `yt-dlp`, `gh`, `xhs-cli`, `rdt-cli`, `rss_parser`, or `beeclaw:universal_reader`. `provider` is the public Beeclaw route, for X normally `beeclaw:x`.
+- `backend_attempts`: shows failed and successful backend attempts. For X it explains `x_mcp/x_api/twitterapi_io/x_rss` auto routing; for Beeclaw URL collection it explains CLI/Jina/UniversalReader fallback.
 - `warnings`: data completeness warnings such as `metrics_incomplete` or `video_metadata_incomplete`.
 - `errors`: failed account/provider details.
 - `next_actions`: ready-to-call tool suggestions such as `radar_export_raw_dataset` and `radar_handoff_to_organizer`.
@@ -142,12 +143,12 @@ Default X collection:
 
 - mode: `auto`
 - public provider: `beeclaw:x`
-- backend order: `x_mcp` -> `x_api` -> `x_rss`
+- backend order: `x_mcp` -> `x_api` -> `twitterapi_io` -> `x_rss` -> `cloud_browser_session/headless_browser_session/local browser_session`
 - date range: recent 7 days
 - include original posts: true
 - include quotes: true
 - include replies: false
-- include retweets: false
+- include retweets: true for generic "X content" requests; false only when the user asks for original-only content or explicitly excludes retweets
 - download images: true
 - download videos: true
 

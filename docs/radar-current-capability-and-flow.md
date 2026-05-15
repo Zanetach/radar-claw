@@ -72,7 +72,7 @@ execution_backend = 实际执行 backend
 
 ```text
 provider=beeclaw:x
-execution_backend=x_mcp / x_api / x_rss / browser_session
+execution_backend=x_mcp / x_api / twitterapi_io / x_rss / browser_session
 ```
 
 这样 AI 员工只需要说“采集 X 上 @elonmusk 最近 7 天内容”，不需要关心底层到底走 X MCP、X API 还是 RSS fallback。
@@ -83,13 +83,13 @@ execution_backend=x_mcp / x_api / x_rss / browser_session
 
 | 平台 | 对外 provider | 当前 backend 设计 | 当前状态 |
 | --- | --- | --- | --- |
-| X / Twitter | `beeclaw:x` | `x_mcp`、`x_api`、`x_rss`、`browser_session`、可选 `twitter-cli` | 已可跑通本地采集；X MCP 可达；真实生产受 X API credits / 权限影响 |
-| 小红书 / XHS | `beeclaw:xhs` | `xiaohongshu-mcp`、`xhs-cli`、`universal_reader` | provider 入口已设计；本地 MCP 未启动；深度生产能力待接入 |
-| YouTube | `beeclaw:youtube` | `yt-dlp`、`youtube_api`、`rss` | provider 框架已纳入；本地 `yt-dlp` 未安装 |
+| X / Twitter | `beeclaw:x` | `x_mcp`、`x_api`、`twitterapi_io`、`x_rss`、`browser_session`、可选 `twitter-cli` | 已可跑通本地采集；X MCP 可达；TwitterAPI.io 可作为第三方只读增强 backend；真实生产受 X API credits / 第三方额度 / 权限影响 |
+| 小红书 / XHS | `beeclaw:xhs` | `xiaohongshu-mcp`、`xhs-cli`、`universal_reader` | 已支持关键词采集和 URL 采集；生产深度能力取决于小红书 MCP / CLI 验收 |
+| YouTube | `beeclaw:youtube` | `yt-dlp`、`youtube_api`、`rss` | 已支持关键词视频采集、账号 RSS/API、URL 采集；生产深度能力取决于 API key 或 yt-dlp 验收 |
 | RSS | `beeclaw:rss` | 内置 RSS parser | 可用 |
 | Web URL | `beeclaw:web` | Jina Reader、universal_reader | 可用 |
 | GitHub | `beeclaw:github` | `gh`、GitHub API、universal_reader | 本地 `gh` 可用 |
-| Reddit | `beeclaw:reddit` | `rdt-cli`、Reddit API、universal_reader | provider 框架已纳入；本地 `rdt-cli` 未安装 |
+| Reddit | `beeclaw:reddit` | `reddit_public_search`、`rdt-cli`、Reddit API、universal_reader | 已支持关键词帖子采集和 URL 采集；生产深度能力取决于公开接口限流或 API/CLI 验收 |
 | 其他内容平台 | `beeclaw:<platform>` | feedgrab / MCP / CLI / universal_reader | 统一框架已纳入，深度账号级能力按平台逐步补齐 |
 
 扩展清单已覆盖：
@@ -105,7 +105,7 @@ HackerNews、Medium、LinuxDo、IDCFlare、小宇宙、喜马拉雅、通用 Web
 - “平台已纳入 Beeclaw provider 框架”：可以被统一配置、路由、健康检查、fallback。
 - “平台已完成生产级深度采集”：需要具体 backend、凭证、限额、反风控策略、媒体下载、失败重试全部跑通。
 
-目前 X 是最完整的主链路；RSS / Web / GitHub 是可用基础链路；小红书、YouTube、Reddit 等处于 provider 框架已接入、生产深度能力继续补齐阶段。
+目前 X 是最完整的主链路；RSS / Web / GitHub 是可用基础链路；小红书、YouTube、Reddit 已具备关键词或 URL 级可执行能力，账号级、评论级和媒体深度能力仍需按生产 backend 继续验收。
 
 ### 2.5 数据与任务能力
 
@@ -192,7 +192,7 @@ Beeclaw Provider Router
 3. Radar 解析平台、账号、时间范围、过滤规则、媒体需求。
 4. Radar 创建 collection task，并返回 `task_id`。
 5. Radar 做 provider health 检查。
-6. Beeclaw Router 选择执行 backend，例如优先 `x_mcp`，不可用时降级到 `x_api / x_rss / browser_session`。
+6. Beeclaw Router 选择执行 backend，例如优先 `x_mcp`，不可用时降级到 `x_api / twitterapi_io / x_rss / browser_session`。
 7. backend 抓取外部平台内容。
 8. Radar 标准化结果，生成统一 raw content。
 9. Radar 去重、过滤、保存正文、链接、指标、媒体 metadata、raw payload。

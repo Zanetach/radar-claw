@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import urllib.request
+from html import unescape
+
+
+def stable_id(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:20]
+
+
+def read_text(url: str, timeout: int = 30) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "Radar-Beeclaw-AgentBrowser/1.0"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
+
+
+def jina_url(url: str) -> str:
+    base = os.getenv("JINA_READER_BASE_URL", "https://r.jina.ai").rstrip("/")
+    return f"{base}/{url}"
+
+
+def title_from_markdown(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        value = line.strip()
+        if value.startswith("#"):
+            title = value.lstrip("#").strip()
+            if title:
+                return title[:120]
+    for line in text.splitlines():
+        value = re.sub(r"\s+", " ", line.strip())
+        if value:
+            return value[:120]
+    return fallback
+
+
+def strip_html(text: str) -> str:
+    text = re.sub(r"<script\b[^>]*>.*?</script>", "", text, flags=re.I | re.S)
+    text = re.sub(r"<style\b[^>]*>.*?</style>", "", text, flags=re.I | re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
+def run_external(url: str) -> dict | None:
+    raw = os.getenv("BEECLAW_AGENT_BROWSER_EXEC") or os.getenv("AGENT_BROWSER_EXEC")
+    if not raw:
+        return None
+    args = shlex.split(raw.format(url=url))
+    completed = subprocess.run(args, capture_output=True, text=True, timeout=int(os.getenv("AGENT_BROWSER_TIMEOUT", "120")))
+    if completed.returncode != 0:
+        raise RuntimeError((completed.stderr or completed.stdout or "agent browser command failed").strip())
+    payload = json.loads(completed.stdout or "{}")
+    if not isinstance(payload, dict):
+        raise RuntimeError("agent browser command returned unsupported json")
+    return payload
+
+
+def call_endpoint(url: str) -> dict | None:
+    endpoint = os.getenv("BEECLAW_AGENT_BROWSER_ENDPOINT") or os.getenv("AGENT_BROWSER_ENDPOINT")
+    if not endpoint:
+        return None
+    body = {
+        "url": url,
+        "mode": os.getenv("AGENT_BROWSER_MODE", "headless"),
+        "headless": os.getenv("AGENT_BROWSER_HEADLESS", "true").lower() != "false",
+        "provider": os.getenv("AGENT_BROWSER_PROVIDER"),
+        "cdpUrl": os.getenv("AGENT_BROWSER_CDP_URL"),
+        "profileDir": os.getenv("AGENT_BROWSER_PROFILE_DIR"),
+    }
+    data = json.dumps({k: v for k, v in body.items() if v not in (None, "")}).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    token = os.getenv("BEECLAW_AGENT_BROWSER_API_KEY") or os.getenv("AGENT_BROWSER_API_KEY")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
+    with urllib.request.urlopen(request, timeout=int(os.getenv("AGENT_BROWSER_TIMEOUT", "120"))) as response:
+        payload = json.loads(response.read().decode("utf-8") or "{}")
+    if not isinstance(payload, dict):
+        raise RuntimeError("agent browser endpoint returned unsupported json")
+    return payload
+
+
+def jina_fallback(url: str) -> dict:
+    mode = "jina_fallback"
+    try:
+        text = read_text(jina_url(url), timeout=int(os.getenv("AGENT_BROWSER_TIMEOUT", "120")))
+    except Exception:
+        text = strip_html(read_text(url, timeout=int(os.getenv("AGENT_BROWSER_TIMEOUT", "120"))))
+        mode = "direct_html_fallback"
+    return {
+        "id": stable_id(url),
+        "url": url,
+        "source_url": url,
+        "title": title_from_markdown(text, url),
+        "content": text,
+        "extra": {
+            "backend": "bundled-agent-browser",
+            "mode": mode,
+            "note": "No cloud/headless browser configured; set AGENT_BROWSER_ENDPOINT or BEECLAW_AGENT_BROWSER_EXEC for real rendered-page capture.",
+        },
+    }
+
+
+def normalize_payload(url: str, payload: dict) -> dict:
+    payload = dict(payload)
+    payload.setdefault("id", stable_id(str(payload.get("url") or url)))
+    payload.setdefault("url", payload.get("source_url") or payload.get("final_url") or url)
+    payload.setdefault("source_url", payload["url"])
+    payload.setdefault("title", title_from_markdown(str(payload.get("content") or payload.get("markdown") or payload.get("text") or ""), payload["url"]))
+    payload.setdefault("content", payload.get("markdown") or payload.get("text") or payload.get("body") or "")
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+    extra.setdefault("backend", "agent-browser")
+    extra.setdefault("mode", os.getenv("AGENT_BROWSER_MODE", "headless"))
+    payload["extra"] = extra
+    return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Beeclaw agent-browser compatible reader")
+    parser.add_argument("--json", action="store_true", help="emit JSON output")
+    parser.add_argument("--mode", choices=["auto", "headless", "cloud", "local"], default=os.getenv("AGENT_BROWSER_MODE", "auto"))
+    parser.add_argument("url")
+    args = parser.parse_args()
+    os.environ["AGENT_BROWSER_MODE"] = args.mode if args.mode != "auto" else os.getenv("AGENT_BROWSER_MODE", "headless")
+
+    try:
+        payload = run_external(args.url) or call_endpoint(args.url) or jina_fallback(args.url)
+        payload = normalize_payload(args.url, payload)
+    except Exception as exc:
+        print(f"agent-browser bundled reader failed: {exc}", file=sys.stderr)
+        return 2
+
+    print(json.dumps(payload, ensure_ascii=False) if args.json else payload.get("content", ""))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,70 @@
+# Example production-side MCP/connector records for Qianfeng AI Platform.
+# Do not put real secrets in this file. Store values in the platform Secret
+# manager and inject them into the deployed services at runtime.
+
+integrations:
+  - name: radar
+    displayName: Radar MCP
+    type: agent_tool
+    command: python3
+    args:
+      - /app/tools/radar_mcp_server.py
+    env:
+      RADAR_BASE_URL: http://radar-api:8780
+    bindToAiEmployeeByDefault: true
+
+  - name: x-mcp
+    displayName: X MCP
+    type: backend
+    endpoint: http://x-mcp:8000/mcp
+    bindToAiEmployeeByDefault: false
+    secretRefs:
+      X_BEARER_TOKEN: secret://x/bearer-token
+    toolAllowlist:
+      - getUsersByUsername
+      - getUsersPosts
+      - getUsersIdPosts
+      - getPosts
+      - searchPostsRecent
+      - getPostsById
+      - getPostsByIds
+      - getUsage
+
+  - name: xiaohongshu-mcp
+    displayName: 小红书 MCP
+    type: backend
+    endpoint: http://xhs-mcp:18060/mcp
+    bindToAiEmployeeByDefault: false
+    secretRefs:
+      XHS_MCP_TOKEN: secret://xhs/mcp-token
+      XHS_COOKIE: secret://xhs/cookie
+    toolAllowlist:
+      - search_notes
+      - get_note
+      - get_user_notes
+
+  - name: twitterapi-io
+    displayName: TwitterAPI.io
+    type: backend
+    endpoint: https://api.twitterapi.io
+    bindToAiEmployeeByDefault: false
+    readOnly: true
+    secretRefs:
+      TWITTERAPI_IO_KEY: secret://twitterapi-io/api-key
+    toolAllowlist:
+      - get_user_last_tweets
+      - advanced_search
+      - get_tweets_by_ids
+      - get_tweet_replies
+      - get_tweet_quotes
+      - get_thread_context
+      - get_user_info
+      - get_usage
+
+radarApiEnv:
+  RADAR_BACKEND_MCP_MODE: platform_gateway
+  PLATFORM_MCP_GATEWAY_URL: https://platform.example.com/mcp-gateway
+  PLATFORM_MCP_WORKSPACE_ID: "<workspace-id>"
+  PLATFORM_MCP_RUNTIME_TOKEN: "<runtime-secret-ref>"
+  TWITTERAPI_IO_BASE_URL: https://api.twitterapi.io
+  TWITTERAPI_IO_READ_ONLY: "true"

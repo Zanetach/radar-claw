@@ -304,7 +304,7 @@ def radar_create_crawl_run(
     """Create and run a crawl task. Use this only from the crawler agent.
 
     For X, use auto by default. Radar exposes provider beeclaw:x and records
-    the selected execution_backend such as x_mcp, x_api, or x_rss. Explicit
+    the selected execution_backend such as x_mcp, x_api, twitterapi_io, or x_rss. Explicit
     legacy modes such as beeclaw:x_mcp and beeclaw:x_rss remain supported.
     """
     payload = {

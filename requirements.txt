@@ -1,4 +1,5 @@
 openpyxl>=3.1.0
 mcp>=1.12.0
 socksio>=1.0.0
+yt-dlp>=2026.3.17
 feedgrab[mcp] @ git+https://github.com/iBigQiang/feedgrab.git@8cc6753edef4f1afee488c21e82f786b7f09175f

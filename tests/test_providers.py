@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from unittest.mock import Mock, patch
@@ -10,6 +11,7 @@ from crawler.providers import (
     XBrowserSessionProvider,
     XMcpXProvider,
     XRssProvider,
+    TwitterApiIoProvider,
     YouTubeRssProvider,
     build_provider,
     normalize_provider_mode,
@@ -166,6 +168,68 @@ class ProviderTests(unittest.TestCase):
                 build_provider("x", mode="api")
         self.assertEqual(ctx.exception.error_type, "missing_credentials")
 
+    @patch("crawler.providers.http_json")
+    def test_twitterapi_io_provider_maps_user_last_tweets(self, http_json):
+        http_json.return_value = {
+            "status": "success",
+            "data": {
+                "tweets": [
+                    {
+                        "id": "tweet-1",
+                        "url": "https://x.com/OpenAI/status/tweet-1",
+                        "text": "Launch update",
+                        "createdAt": "2026-05-15T00:00:00Z",
+                        "viewCount": 1000,
+                        "likeCount": 20,
+                        "replyCount": 3,
+                        "retweetCount": 4,
+                        "lang": "en",
+                        "author": {"userName": "OpenAI"},
+                        "media": [{"type": "photo", "url": "https://pbs.twimg.com/media/example.jpg"}],
+                    }
+                ],
+                "next_cursor": "cursor-1",
+            },
+        }
+        with patch.dict(os.environ, {"TWITTERAPI_IO_KEY": "secret-key"}):
+            provider = build_provider("x", mode="beeclaw:x_twitterapi_io")
+            result = provider.fetch({"id": 1, "account_name": "OpenAI", "account_handle": "@OpenAI"}, max_results=10)
+
+        http_json.assert_called_once()
+        _, kwargs = http_json.call_args
+        self.assertEqual(kwargs["headers"], {"X-API-Key": "secret-key"})
+        self.assertEqual(kwargs["params"]["userName"], "OpenAI")
+        self.assertEqual(result.items[0].original_content_id, "tweet-1")
+        self.assertEqual(result.items[0].view_count, 1000)
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "twitterapi_io")
+        self.assertEqual(result.items[0].media_assets[0]["url"], "https://pbs.twimg.com/media/example.jpg")
+        self.assertEqual(result.next_cursor, "cursor-1")
+
+    @patch("crawler.providers.time.sleep")
+    @patch("crawler.providers.http_json")
+    def test_twitterapi_io_provider_retries_free_tier_rate_limit(self, http_json, sleep):
+        http_json.side_effect = [
+            ProviderError('{"error":"Too Many Requests","message":"For free-tier users, the QPS limit is one request every 5 seconds."}', error_type="http_error", status_code=429),
+            {
+                "status": "success",
+                "tweets": [
+                    {
+                        "id": "tweet-2",
+                        "url": "https://x.com/OpenAI/status/tweet-2",
+                        "text": "Retry worked",
+                        "author": {"userName": "OpenAI"},
+                    }
+                ],
+            },
+        ]
+        with patch.dict(os.environ, {"TWITTERAPI_IO_KEY": "secret-key", "TWITTERAPI_IO_RETRY_SLEEP_SECONDS": "0.01"}):
+            provider = build_provider("x", mode="beeclaw:x_twitterapi_io")
+            result = provider.fetch({"id": 1, "account_name": "OpenAI", "account_handle": "@OpenAI"}, max_results=1)
+
+        self.assertEqual(http_json.call_count, 2)
+        sleep.assert_called_once_with(0.01)
+        self.assertEqual(result.items[0].original_content_id, "tweet-2")
+
     def test_browser_session_x_reports_unavailable_webbridge(self):
         provider = build_provider("x", mode="browser-session")
         with patch("crawler.providers.webbridge_status", return_value={"reachable": False, "error": "down"}):
@@ -179,6 +243,77 @@ class ProviderTests(unittest.TestCase):
             with self.assertRaises(ProviderError) as ctx:
                 provider.fetch({"id": 1, "account_name": "elonmusk"}, max_results=10)
         self.assertEqual(ctx.exception.error_type, "webbridge_unavailable")
+
+    @patch.dict(
+        os.environ,
+        {
+            "BEECLAW_X_BROWSER_SESSION_MODE": "cloud",
+            "BEECLAW_X_BROWSER_ENDPOINT": "https://browser.example.test/extract",
+            "BEECLAW_X_BROWSER_API_KEY": "secret-token",
+        },
+        clear=False,
+    )
+    @patch("crawler.providers.http_post_json")
+    def test_x_browser_session_can_use_cloud_browser_endpoint(self, http_post_json):
+        http_post_json.return_value = {
+            "items": [
+                {
+                    "id": "cloud-1",
+                    "text": "cloud ok",
+                    "url": "https://x.com/elonmusk/status/cloud-1",
+                    "view_count": 1000,
+                    "like_count": 100,
+                    "reply_count": 10,
+                    "retweet_count": 5,
+                    "media_assets": [{"type": "image", "url": "https://pbs.twimg.com/media/cloud.jpg"}],
+                }
+            ]
+        }
+
+        result = build_provider("x", mode="browser-session").fetch({"id": 1, "account_name": "elonmusk"}, max_results=3)
+
+        self.assertEqual(result.items[0].text, "cloud ok")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "cloud_browser_session")
+        self.assertEqual(result.items[0].media_assets[0]["url"], "https://pbs.twimg.com/media/cloud.jpg")
+        url, kwargs = http_post_json.call_args.args[0], http_post_json.call_args.kwargs
+        self.assertEqual(url, "https://browser.example.test/extract")
+        self.assertEqual(kwargs["payload"]["platform"], "x")
+        self.assertEqual(kwargs["payload"]["task"], "profile_posts")
+        self.assertEqual(kwargs["payload"]["handle"], "elonmusk")
+        self.assertEqual(kwargs["payload"]["maxResults"], 3)
+        self.assertNotIn("secret-token", str(kwargs["payload"]))
+
+    @patch.dict(
+        os.environ,
+        {
+            "BEECLAW_X_BROWSER_SESSION_MODE": "headless",
+            "BEECLAW_X_BROWSER_CMD": "x-browser --json {handle} {max_results}",
+        },
+        clear=False,
+    )
+    @patch("crawler.providers.subprocess.run")
+    def test_x_browser_session_can_use_headless_browser_command(self, run):
+        completed = Mock()
+        completed.returncode = 0
+        completed.stdout = json.dumps(
+            {
+                "items": [
+                    {
+                        "id": "headless-1",
+                        "text": "headless ok",
+                        "url": "https://x.com/elonmusk/status/headless-1",
+                    }
+                ]
+            }
+        )
+        completed.stderr = ""
+        run.return_value = completed
+
+        result = build_provider("x", mode="browser-session").fetch({"id": 1, "account_name": "elonmusk"}, max_results=2)
+
+        self.assertEqual(result.items[0].text, "headless ok")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "headless_browser_session")
+        self.assertEqual(run.call_args.args[0], ["x-browser", "--json", "elonmusk", "2"])
 
     def test_browser_session_marks_profile_reposts_for_filtering(self):
         provider = XBrowserSessionProvider()
@@ -216,6 +351,8 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(normalize_provider_mode("feedgrab:x"), "beeclaw:x")
         self.assertEqual(normalize_provider_mode("beeclaw:x_api"), "api")
         self.assertEqual(normalize_provider_mode("feedgrab:x_api"), "api")
+        self.assertEqual(normalize_provider_mode("beeclaw:x_twitterapi_io"), "beeclaw:x_twitterapi_io")
+        self.assertEqual(normalize_provider_mode("twitterapi_io"), "beeclaw:x_twitterapi_io")
         self.assertEqual(normalize_provider_mode("feedgrab:xmcp"), "beeclaw:x_mcp")
         self.assertEqual(normalize_provider_mode("beeclaw:xmcp"), "beeclaw:x_mcp")
         self.assertEqual(normalize_provider_mode("feedgrab:x_rss"), "beeclaw:x_rss")
@@ -227,6 +364,7 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(capabilities["chrome-session"]["x"])
         self.assertTrue(capabilities["beeclaw:x"]["x"])
         self.assertTrue(capabilities["beeclaw:x_mcp"]["x"])
+        self.assertTrue(capabilities["beeclaw:x_twitterapi_io"]["x"])
         self.assertTrue(capabilities["beeclaw:x_rss"]["x"])
         self.assertTrue(capabilities["beeclaw"]["github"])
         self.assertFalse(capabilities["chrome-session"]["youtube"])
@@ -301,6 +439,60 @@ class ProviderTests(unittest.TestCase):
         self.assertTrue(api_fetch.called)
         self.assertTrue(rss_fetch.called)
         self.assertFalse(browser_fetch.called)
+
+    @patch.object(XBrowserSessionProvider, "fetch")
+    @patch.object(XRssProvider, "fetch")
+    @patch.object(TwitterApiIoProvider, "__init__", return_value=None)
+    @patch.object(TwitterApiIoProvider, "fetch")
+    @patch.object(XApiProvider, "__init__", return_value=None)
+    @patch.object(XApiProvider, "fetch")
+    @patch.object(XMcpXProvider, "fetch")
+    def test_auto_x_falls_back_to_browser_session_when_api_and_rss_fail(
+        self,
+        xmcp_fetch,
+        api_fetch,
+        _api_init,
+        twitterapi_fetch,
+        _twitterapi_init,
+        rss_fetch,
+        browser_fetch,
+    ):
+        xmcp_fetch.side_effect = ProviderError("credits depleted", error_type="credits_depleted", status_code=402)
+        api_fetch.side_effect = ProviderError("missing token", error_type="missing_credentials")
+        twitterapi_fetch.side_effect = ProviderError("credits depleted", error_type="credits_depleted", status_code=402)
+        rss_fetch.side_effect = ProviderError("rss unavailable", error_type="http_error", status_code=404)
+        browser_fetch.return_value = FetchResult(
+            account_id=1,
+            platform="x",
+            items=[
+                ContentItem(
+                    platform="x",
+                    original_content_id="browser-1",
+                    title=None,
+                    text="browser ok",
+                    published_at=None,
+                    url="https://x.com/elonmusk/status/browser-1",
+                    view_count=1000,
+                    like_count=100,
+                    comment_count=10,
+                    share_count=5,
+                    media_type="image",
+                    language=None,
+                    raw_payload={"source": "beeclaw:x", "provider_backend": "browser_session"},
+                    media_assets=[{"type": "image", "url": "https://pbs.twimg.com/media/test.jpg"}],
+                )
+            ],
+        )
+
+        result = build_provider("x", mode="auto").fetch({"id": 1, "account_name": "elonmusk"}, max_results=2)
+
+        self.assertEqual(len(result.items), 1)
+        self.assertEqual(result.items[0].text, "browser ok")
+        self.assertEqual(result.items[0].raw_payload["source"], "beeclaw:x")
+        self.assertEqual(result.items[0].raw_payload["provider_backend"], "browser_session")
+        self.assertEqual(result.items[0].raw_payload["backend_attempts"][-1]["backend"], "browser_session")
+        self.assertEqual(result.items[0].raw_payload["backend_attempts"][-1]["status"], "success")
+        self.assertTrue(browser_fetch.called)
 
     @patch("crawler.providers.http_post_json")
     def test_webbridge_client_unwraps_stringified_json(self, http_post_json):

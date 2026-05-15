@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+VENV_DIR="${RADAR_VENV_DIR:-${HOME}/.radar-venv}"
+PYTHON_BIN="${RADAR_PYTHON:-${VENV_DIR}/bin/python}"
+
+if [ ! -x "${PYTHON_BIN}" ]; then
+  echo "Radar Python venv not found at ${PYTHON_BIN}. Run ./tools/install_beeclaw_clis.sh first." >&2
+  exit 127
+fi
+
+if ! "${PYTHON_BIN}" -c "import yt_dlp" >/dev/null 2>&1; then
+  echo "yt-dlp Python package is not installed in ${PYTHON_BIN}. Run ./tools/install_beeclaw_clis.sh first." >&2
+  exit 127
+fi
+
+exec "${PYTHON_BIN}" -m yt_dlp "$@"

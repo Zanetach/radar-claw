@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="50%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1E3A8A" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 48px; font-weight: 850; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 24px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 30px; font-weight: 840; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 20px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 16px; fill: #64748B; letter-spacing: 0; }
+      .tiny { font-size: 14px; fill: #64748B; letter-spacing: 0; }
+      .label { font-size: 17px; font-weight: 760; fill: #0F172A; letter-spacing: 0; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.25; }
+      .blueSoft { fill: #EFF6FF; stroke: #BFDBFE; stroke-width: 1.2; }
+      .greenSoft { fill: #F0FDFA; stroke: #99F6E4; stroke-width: 1.2; }
+      .amberSoft { fill: #FFF7ED; stroke: #FED7AA; stroke-width: 1.2; }
+      .graySoft { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 1.2; }
+      .line { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrowBlue); }
+      .lineGreen { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowGreen); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1200" rx="36" fill="url(#bg)"/>
+  <path d="M1260 0 C1490 90 1584 230 1800 292 L1800 0 Z" fill="#DBEAFE" opacity="0.72"/>
+  <path d="M0 1018 C280 924 430 1078 700 988 C950 904 1074 1068 1330 980 C1540 908 1640 1050 1800 968 L1800 1200 L0 1200 Z" fill="#DCFCE7" opacity="0.25"/>
+
+  <g class="font">
+    <g transform="translate(76 58)">
+      <rect x="0" y="0" width="82" height="82" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="41" y="54" text-anchor="middle" font-size="39" font-weight="900" fill="#FFFFFF">F</text>
+    </g>
+    <text x="188" y="94" class="title">Workspace 与飞书：功能边界和交互关系</text>
+    <text x="190" y="135" class="subtitle">Workspace 负责“发起与推进”，飞书负责“协作与沉淀”，两者通过任务状态和内容链接形成闭环。</text>
+
+    <rect x="86" y="190" width="720" height="548" rx="34" class="card" filter="url(#shadow)"/>
+    <rect x="126" y="230" width="230" height="56" rx="28" fill="url(#blue)" filter="url(#softShadow)"/>
+    <text x="241" y="267" text-anchor="middle" font-size="24" font-weight="900" fill="#FFFFFF">Workspace</text>
+    <text x="126" y="328" class="section">用户操作入口</text>
+    <text x="126" y="368" class="body">面向业务用户和 AI 员工操作者，负责复杂任务编排。</text>
+
+    <g transform="translate(126 410)">
+      <rect x="0" y="0" width="620" height="48" rx="15" class="blueSoft"/>
+      <text x="24" y="31" class="label">自然语言发起采集、整理、发布任务</text>
+      <rect x="0" y="62" width="620" height="48" rx="15" class="blueSoft"/>
+      <text x="24" y="93" class="label">选择 Agent：内容采集 / 内容整理 / 矩阵发布</text>
+      <rect x="0" y="124" width="620" height="48" rx="15" class="blueSoft"/>
+      <text x="24" y="155" class="label">查看任务进度、失败原因、下一步动作</text>
+      <rect x="0" y="186" width="620" height="48" rx="15" class="blueSoft"/>
+      <text x="24" y="217" class="label">选择 raw content 或 classified content 进入下一阶段</text>
+      <rect x="0" y="248" width="620" height="48" rx="15" class="amberSoft"/>
+      <text x="24" y="279" class="label">不承载长期文档归档，不替代表格审核协作</text>
+    </g>
+
+    <rect x="994" y="190" width="720" height="548" rx="34" class="card" filter="url(#shadow)"/>
+    <rect x="1034" y="230" width="230" height="56" rx="28" fill="url(#green)" filter="url(#softShadow)"/>
+    <text x="1149" y="267" text-anchor="middle" font-size="24" font-weight="900" fill="#FFFFFF">飞书</text>
+    <text x="1034" y="328" class="section">协作与结果承载</text>
+    <text x="1034" y="368" class="body">面向团队协作、审核、通知、文件和表格沉淀。</text>
+
+    <g transform="translate(1034 410)">
+      <rect x="0" y="0" width="620" height="48" rx="15" class="greenSoft"/>
+      <text x="24" y="31" class="label">机器人通知：任务完成、失败、待审核提醒</text>
+      <rect x="0" y="62" width="620" height="48" rx="15" class="greenSoft"/>
+      <text x="24" y="93" class="label">多维表：任务看板、原始内容、整理内容、排期</text>
+      <rect x="0" y="124" width="620" height="48" rx="15" class="greenSoft"/>
+      <text x="24" y="155" class="label">云盘：Markdown、图片、视频、报告文件存储</text>
+      <rect x="0" y="186" width="620" height="48" rx="15" class="greenSoft"/>
+      <text x="24" y="217" class="label">人工审核：评论、负责人、审批状态流转</text>
+      <rect x="0" y="248" width="620" height="48" rx="15" class="amberSoft"/>
+      <text x="24" y="279" class="label">不适合承载复杂自然语言任务编排</text>
+    </g>
+
+    <g transform="translate(815 366)">
+      <rect x="0" y="0" width="170" height="198" rx="28" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+      <text x="85" y="46" text-anchor="middle" font-size="22" font-weight="850" fill="#0F172A">交互桥</text>
+      <text x="85" y="84" text-anchor="middle" class="small">任务状态</text>
+      <text x="85" y="116" text-anchor="middle" class="small">内容链接</text>
+      <text x="85" y="148" text-anchor="middle" class="small">审核结果</text>
+      <text x="85" y="180" text-anchor="middle" class="small">通知回执</text>
+    </g>
+    <path d="M806 460 L815 460" class="line"/>
+    <path d="M985 500 L994 500" class="lineGreen"/>
+    <path d="M994 588 L985 588" stroke="#0F766E" stroke-width="4" fill="none" marker-end="url(#arrowGreen)"/>
+    <path d="M815 628 L806 628" stroke="#2563EB" stroke-width="4" fill="none" marker-end="url(#arrowBlue)"/>
+
+    <rect x="96" y="790" width="1608" height="278" rx="34" class="card" filter="url(#shadow)"/>
+    <text x="138" y="844" class="section">典型闭环</text>
+    <g transform="translate(138 888)">
+      <rect x="0" y="0" width="228" height="84" rx="22" class="blueSoft"/>
+      <text x="114" y="35" text-anchor="middle" class="label">Workspace 发起</text>
+      <text x="114" y="62" text-anchor="middle" class="small">用户对 AI 员工下指令</text>
+      <path d="M240 42 L318 42" class="line"/>
+      <rect x="330" y="0" width="228" height="84" rx="22" class="blueSoft"/>
+      <text x="444" y="35" text-anchor="middle" class="label">Agent 执行</text>
+      <text x="444" y="62" text-anchor="middle" class="small">采集 / 整理 / 发布</text>
+      <path d="M570 42 L648 42" class="line"/>
+      <rect x="660" y="0" width="228" height="84" rx="22" class="greenSoft"/>
+      <text x="774" y="35" text-anchor="middle" class="label">同步飞书</text>
+      <text x="774" y="62" text-anchor="middle" class="small">通知、表格、云盘</text>
+      <path d="M900 42 L978 42" class="lineGreen"/>
+      <rect x="990" y="0" width="228" height="84" rx="22" class="greenSoft"/>
+      <text x="1104" y="35" text-anchor="middle" class="label">团队审核</text>
+      <text x="1104" y="62" text-anchor="middle" class="small">状态、评论、负责人</text>
+      <path d="M1230 42 L1308 42" class="lineGreen"/>
+      <rect x="1320" y="0" width="228" height="84" rx="22" class="blueSoft"/>
+      <text x="1434" y="35" text-anchor="middle" class="label">回到 Workspace</text>
+      <text x="1434" y="62" text-anchor="middle" class="small">推进下一步</text>
+    </g>
+    <text x="900" y="1032" text-anchor="middle" font-size="22" font-weight="820" fill="#0F172A">结论：Workspace 负责让用户“用起来”，飞书负责让团队“管起来”。</text>
+
+    <rect x="330" y="1100" width="1140" height="58" rx="29" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <text x="900" y="1137" text-anchor="middle" font-size="22" font-weight="820" fill="#0F172A">推荐：Workspace 主入口 + 飞书协作沉淀 + Radar 内部执行工具。</text>
+  </g>
+</svg>

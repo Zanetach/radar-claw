@@ -13,7 +13,7 @@ from crawler.beeclaw_adapter import FeedgrabUnavailable
 from crawler.db import init_db, save_fetch_result, upsert_accounts
 from crawler.models import ContentItem, FetchResult, SourceAccount
 from crawler.providers import ProviderError
-from crawler.web import RadarAdminHandler, infer_platform_from_url, parse_chat_prompt
+from crawler.web import RadarAdminHandler, infer_platform_from_url, parse_chat_prompt, search_youtube_ytdlp_keyword
 from crawler.worker import process_next_queued_run, process_queued_runs, run_worker_loop
 from tests.test_providers import XGO_RSS
 
@@ -55,6 +55,27 @@ def source_account(name: str, handle: str, *, platform: str = "x", category: str
 
 
 class WebChatTests(unittest.TestCase):
+    @patch("crawler.web._run_json_command")
+    @patch("crawler.web.resolve_cli", return_value="/project/tools/beeclaw-bin/yt-dlp")
+    def test_youtube_keyword_search_uses_project_bundled_ytdlp(self, resolve_cli, run_json_command):
+        run_json_command.return_value = {
+            "entries": [
+                {
+                    "id": "video-1",
+                    "title": "AI tools video",
+                    "webpage_url": "https://www.youtube.com/watch?v=video-1",
+                    "channel": "AI Channel",
+                }
+            ]
+        }
+
+        result = search_youtube_ytdlp_keyword(keyword="AI 工具", max_results=1)
+
+        resolve_cli.assert_called_once_with("yt-dlp")
+        self.assertEqual(run_json_command.call_args.args[0][0], "/project/tools/beeclaw-bin/yt-dlp")
+        self.assertEqual(result["_provider_backend"], "yt-dlp:search")
+        self.assertEqual(result["items"][0]["id"], "video-1")
+
     @patch("crawler.web.probe_mcp_endpoint")
     def test_mcp_integrations_expose_radar_and_x_backend_without_secret_values(self, probe_mcp_endpoint):
         probe_mcp_endpoint.return_value = {"url": "http://x-mcp:8000/mcp", "reachable": True, "message": "HTTP 200"}
@@ -67,6 +88,7 @@ class WebChatTests(unittest.TestCase):
                 "MCP_MANAGER_DISPLAY_NAME": "Platform MCP Manager",
                 "XMCP_SERVER_URL": "http://x-mcp:8000/mcp",
                 "X_BEARER_TOKEN": "secret-token",
+                "TWITTERAPI_IO_KEY": "twitterapi-secret",
                 "X_API_TOOL_ALLOWLIST": "getUsersByUsername,getUsersPosts",
             },
         ):
@@ -86,7 +108,11 @@ class WebChatTests(unittest.TestCase):
         self.assertTrue(integrations["x-mcp"]["secretStatus"]["X_BEARER_TOKEN"])
         self.assertEqual(integrations["xiaohongshu-mcp"]["type"], "backend")
         self.assertFalse(integrations["xiaohongshu-mcp"]["defaultAgentBinding"])
+        self.assertEqual(integrations["twitterapi-io"]["type"], "backend")
+        self.assertEqual(integrations["twitterapi-io"]["status"], "connected")
+        self.assertTrue(integrations["twitterapi-io"]["secretStatus"]["TWITTERAPI_IO_KEY"])
         self.assertNotIn("secret-token", json.dumps(result))
+        self.assertNotIn("twitterapi-secret", json.dumps(result))
 
     @patch("crawler.web.probe_mcp_endpoint")
     def test_mcp_integrations_can_filter_backend_type(self, probe_mcp_endpoint):
@@ -95,7 +121,7 @@ class WebChatTests(unittest.TestCase):
 
         result = handler.api_mcp_integrations({"type": ["backend"]})
 
-        self.assertEqual([item["name"] for item in result["items"]], ["x-mcp", "xiaohongshu-mcp"])
+        self.assertEqual([item["name"] for item in result["items"]], ["x-mcp", "xiaohongshu-mcp", "twitterapi-io"])
 
     @patch("crawler.web.probe_mcp_endpoint")
     def test_mcp_integrations_support_platform_gateway_mode_without_exposing_runtime_token(self, probe_mcp_endpoint):
@@ -124,6 +150,8 @@ class WebChatTests(unittest.TestCase):
         self.assertEqual(result["manager"]["status"], "connected")
         self.assertTrue(integrations["x-mcp"]["gateway"]["urlConfigured"])
         self.assertEqual(integrations["xiaohongshu-mcp"]["endpoint"], "platform://mcp/xiaohongshu-mcp")
+        self.assertEqual(integrations["twitterapi-io"]["endpoint"], "platform://mcp/twitterapi-io")
+        self.assertEqual(integrations["twitterapi-io"]["invocationMode"], "platform_gateway")
         self.assertNotIn("secret-runtime-token", json.dumps(result))
 
     @patch("crawler.web.probe_mcp_endpoint")
@@ -202,6 +230,14 @@ class WebChatTests(unittest.TestCase):
         self.assertEqual(task["platform"], "x")
         self.assertEqual(task["mode"], "auto")
         self.assertEqual(task["sourceType"], "account")
+        self.assertFalse(task["includeRetweets"])
+
+    def test_generic_x_content_prompt_includes_visible_profile_activity(self):
+        task = parse_chat_prompt("采集 @elonmusk 最近 7 天 X 内容，保留图片、视频和互动数据")
+        self.assertEqual(task["platform"], "x")
+        self.assertEqual(task["mode"], "auto")
+        self.assertEqual(task["sourceType"], "account")
+        self.assertTrue(task["includeRetweets"])
 
     def test_url_prompt_infers_facebook_url_collection(self):
         task = parse_chat_prompt("采集 Facebook 这个页面 https://www.facebook.com/openai/posts/123")
@@ -240,6 +276,13 @@ class WebChatTests(unittest.TestCase):
         self.assertEqual(task["platform"], "xhs")
         self.assertEqual(task["sourceType"], "keyword")
         self.assertEqual(task["query"], "AI 工具")
+        self.assertEqual(task["mode"], "beeclaw")
+
+    def test_platform_only_xhs_prompt_uses_default_discovery_query(self):
+        task = parse_chat_prompt("我今天要采集小红书的内容")
+        self.assertEqual(task["platform"], "xhs")
+        self.assertEqual(task["sourceType"], "keyword")
+        self.assertEqual(task["query"], "热门")
         self.assertEqual(task["mode"], "beeclaw")
 
     def test_agent_chat_non_x_without_url_requests_url_without_failed_run(self):
@@ -399,6 +442,37 @@ class WebChatTests(unittest.TestCase):
             self.assertEqual(run["agent_feedback"]["top_contents"][0]["execution_backend"], "Jina Reader")
 
     @patch("crawler.web.read_url")
+    def test_collection_task_url_can_request_agent_browser_backend(self, read_url):
+        read_url.return_value = {
+            "source_type": "web",
+            "source_name": "agent-browser",
+            "title": "Rendered Page",
+            "content": "Rendered page body.",
+            "url": "https://example.com/app",
+            "id": "rendered-page",
+            "extra": {
+                "provider_backend": "agent-browser",
+                "backend_attempts": [{"backend": "agent-browser", "status": "success"}],
+            },
+        }
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            run = handler.api_create_collection_task(
+                {"url": "https://example.com/app", "platform": "web", "backend": "agent-browser"}
+            )
+
+            read_url.assert_called_once_with("https://example.com/app", platform="web", backend_hint="agent-browser")
+            self.assertEqual(run["saved_count"], 1)
+            self.assertEqual(run["agent_feedback"]["summary"]["execution_backends"], ["agent-browser"])
+            self.assertEqual(run["agent_feedback"]["backend_attempts"], [{"backend": "agent-browser", "status": "success"}])
+
+    @patch("crawler.web.read_url")
     def test_collection_task_url_failure_finishes_run_with_agent_feedback(self, read_url):
         read_url.side_effect = RuntimeError("reader connection closed")
         with TemporaryDirectory() as tmp:
@@ -477,6 +551,40 @@ class WebChatTests(unittest.TestCase):
             media_rows = conn.execute("SELECT media_type, url FROM media_assets").fetchall()
             self.assertEqual(len(media_rows), 1)
             self.assertEqual(media_rows[0]["url"], "https://example.com/1.jpg")
+
+    @patch("crawler.web.read_url")
+    def test_rss_url_collection_respects_max_results(self, read_url):
+        read_url.return_value = {
+            "source_type": "rss",
+            "source_name": "rss_parser",
+            "title": "Radar Feed",
+            "content": "- Entry 1\n- Entry 2\n- Entry 3",
+            "url": "https://example.com/feed.xml",
+            "id": "feed-id",
+            "extra": {
+                "provider_backend": "rss_parser",
+                "items": [
+                    {"id": "entry-1", "title": "Entry 1", "url": "https://example.com/1", "summary": "First item."},
+                    {"id": "entry-2", "title": "Entry 2", "url": "https://example.com/2", "summary": "Second item."},
+                    {"id": "entry-3", "title": "Entry 3", "url": "https://example.com/3", "summary": "Third item."},
+                ],
+            },
+        }
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            run = handler.api_create_collection_task(
+                {"url": "https://example.com/feed.xml", "platform": "rss", "maxResults": 1}
+            )
+
+            self.assertEqual(run["saved_count"], 1)
+            rows = conn.execute("SELECT original_content_id, url FROM source_contents WHERE platform = 'rss'").fetchall()
+            self.assertEqual([(row["original_content_id"], row["url"]) for row in rows], [("entry-1", "https://example.com/1")])
 
     @patch("crawler.web.read_url")
     def test_agent_chat_facebook_url_collects_via_beeclaw_and_saves_raw_content(self, read_url):
@@ -741,7 +849,7 @@ class WebChatTests(unittest.TestCase):
 
     @patch("crawler.web.read_url")
     def test_batch_url_collection_creates_child_tasks_and_worker_updates_parent(self, read_url):
-        def fake_read_url(url):
+        def fake_read_url(url, **_kwargs):
             return {
                 "source_type": "web",
                 "source_name": "GitHub",
@@ -1235,6 +1343,140 @@ class WebChatTests(unittest.TestCase):
             self.assertEqual(backend_mcp_call_tool.call_args.kwargs["integration"], "xiaohongshu-mcp")
             self.assertEqual(backend_mcp_call_tool.call_args.kwargs["tool_name"], "search_notes")
             self.assertEqual(backend_mcp_call_tool.call_args.kwargs["arguments"]["query"], "AI 工具")
+
+    @patch("crawler.web.search_feedgrab_xhs_keyword")
+    @patch("crawler.web.search_xhs_mcp_keyword", side_effect=ProviderError("mcp offline", error_type="xhs_mcp_unavailable"))
+    def test_xhs_keyword_collection_records_backend_fallback_attempts(self, _mcp_search, feedgrab_search):
+        feedgrab_search.return_value = {
+            "notes": [
+                {
+                    "id": "xhs-fallback-1",
+                    "title": "AI 工具清单",
+                    "content": "来自 feedgrab fallback 的小红书笔记。",
+                    "url": "https://www.xiaohongshu.com/explore/xhs-fallback-1",
+                    "likes": 77,
+                }
+            ]
+        }
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            run = handler.api_create_collection_task(
+                {"platform": "xhs", "query": "AI 工具", "mode": "beeclaw", "maxResults": 5}
+            )
+
+            self.assertEqual(run["saved_count"], 1)
+            self.assertEqual(
+                run["agent_feedback"]["backend_attempts"],
+                [
+                    {"backend": "xiaohongshu-mcp:search_notes", "status": "failed", "error": "xhs_mcp_unavailable", "message": "mcp offline"},
+                    {"backend": "feedgrab:xhs_search", "status": "success"},
+                ],
+            )
+            row = conn.execute("SELECT raw_payload_json FROM source_contents").fetchone()
+            self.assertIn('"backend_attempts"', row["raw_payload_json"])
+
+    def test_youtube_keyword_collection_saves_search_results(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            with patch(
+                "crawler.web.search_beeclaw_youtube_keyword",
+                return_value={
+                    "_provider_backend": "yt-dlp:search",
+                    "items": [
+                        {
+                            "id": "yt-video-1",
+                            "title": "AI tools demo",
+                            "content": "A useful AI tools video.",
+                            "url": "https://www.youtube.com/watch?v=yt-video-1",
+                            "channel": "AI Channel",
+                            "views": 1200,
+                            "likes": 80,
+                            "comments": 12,
+                            "thumbnail_url": "https://img.youtube.com/yt-video-1.jpg",
+                            "published_at": "2026-05-14T08:00:00Z",
+                        }
+                    ],
+                },
+            ):
+                run = handler.api_create_collection_task(
+                    {
+                        "platform": "youtube",
+                        "query": "AI tools",
+                        "mode": "beeclaw",
+                        "maxResults": 5,
+                    }
+                )
+
+            self.assertEqual(run["saved_count"], 1)
+            self.assertEqual(run["contents"][0]["provider"], "beeclaw:youtube")
+            self.assertEqual(run["agent_feedback"]["summary"]["execution_backends"], ["yt-dlp:search"])
+            row = conn.execute("SELECT platform, provider, title, original_text, view_count, raw_payload_json FROM source_contents").fetchone()
+            self.assertEqual(row["platform"], "youtube")
+            self.assertEqual(row["provider"], "beeclaw:youtube")
+            self.assertEqual(row["title"], "AI tools demo")
+            self.assertEqual(row["original_text"], "A useful AI tools video.")
+            self.assertEqual(row["view_count"], 1200)
+            self.assertIn('"provider_backend": "yt-dlp:search"', row["raw_payload_json"])
+
+    def test_reddit_keyword_collection_saves_search_results(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            with patch(
+                "crawler.web.search_beeclaw_reddit_keyword",
+                return_value={
+                    "_provider_backend": "reddit_public_search",
+                    "items": [
+                        {
+                            "id": "reddit-post-1",
+                            "title": "AI tools discussion",
+                            "content": "A Reddit discussion about AI tools.",
+                            "url": "https://www.reddit.com/r/artificial/comments/reddit-post-1/ai_tools_discussion/",
+                            "subreddit": "artificial",
+                            "score": 321,
+                            "comments": 44,
+                            "published_at": "2026-05-14T09:00:00Z",
+                        }
+                    ],
+                },
+            ):
+                run = handler.api_create_collection_task(
+                    {
+                        "platform": "reddit",
+                        "query": "AI tools",
+                        "mode": "beeclaw",
+                        "maxResults": 5,
+                    }
+                )
+
+            self.assertEqual(run["saved_count"], 1)
+            self.assertEqual(run["contents"][0]["provider"], "beeclaw:reddit")
+            self.assertEqual(run["agent_feedback"]["summary"]["execution_backends"], ["reddit_public_search"])
+            row = conn.execute("SELECT platform, provider, title, original_text, like_count, comment_count, raw_payload_json FROM source_contents").fetchone()
+            self.assertEqual(row["platform"], "reddit")
+            self.assertEqual(row["provider"], "beeclaw:reddit")
+            self.assertEqual(row["title"], "AI tools discussion")
+            self.assertEqual(row["original_text"], "A Reddit discussion about AI tools.")
+            self.assertEqual(row["like_count"], 321)
+            self.assertEqual(row["comment_count"], 44)
+            self.assertIn('"provider_backend": "reddit_public_search"', row["raw_payload_json"])
 
     def test_agent_feedback_exposes_x_backend_attempts_and_completeness(self):
         handler = object.__new__(RadarAdminHandler)

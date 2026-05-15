@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import urllib.request
+
+
+def read_text(url: str, timeout: int = 30) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "Radar-Beeclaw-XHS/1.0"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
+
+
+def jina_url(url: str) -> str:
+    base = os.getenv("JINA_READER_BASE_URL", "https://r.jina.ai").rstrip("/")
+    return f"{base}/{url}"
+
+
+def title_from_markdown(text: str, fallback: str) -> str:
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("#"):
+            value = line.lstrip("#").strip()
+            if value:
+                return value[:120]
+    for line in text.splitlines():
+        value = line.strip()
+        if value:
+            return re.sub(r"\s+", " ", value)[:120]
+    return fallback
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Beeclaw bundled xhs-cli compatible reader")
+    parser.add_argument("--json", action="store_true", help="emit JSON output")
+    parser.add_argument("url")
+    args = parser.parse_args()
+
+    try:
+        text = read_text(jina_url(args.url))
+    except Exception as exc:
+        print(f"xhs-cli bundled reader failed: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "id": hashlib.sha256(args.url.encode("utf-8")).hexdigest()[:20],
+        "url": args.url,
+        "source_url": args.url,
+        "title": title_from_markdown(text, args.url),
+        "content": text,
+        "extra": {
+            "backend": "bundled-xhs-cli",
+            "note": "No-key reader via Jina Reader; deep XHS fields require xiaohongshu-mcp or a real xhs-cli.",
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False) if args.json else payload["content"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

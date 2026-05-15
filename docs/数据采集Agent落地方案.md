@@ -246,7 +246,7 @@ Radar Agent API / Radar MCP Server
 采集调度层
         |
         +-- Beeclaw Provider
-        |     +-- X: beeclaw:x(auto) -> x_mcp / x_api / x_rss
+        |     +-- X: beeclaw:x(auto) -> x_mcp / x_api / twitterapi_io / x_rss
         |     +-- 小红书兜底抓取
         |     +-- 微信公众号 / YouTube / RSS / Web
         +-- 小红书 MCP Provider
@@ -537,7 +537,7 @@ flowchart TD
     F --> P7["Instagram"]
     F --> P8["Amazon"]
 
-    P1 --> R1["Beeclaw X: x_mcp / x_api / x_rss"]
+    P1 --> R1["Beeclaw X: x_mcp / x_api / twitterapi_io / x_rss"]
     P2 --> R2["xiaohongshu-mcp优先，feedgrab兜底"]
     P3 --> R3["feedgrab WeChat Provider"]
     P4 --> R4["feedgrab YouTube Provider"]
@@ -777,7 +777,7 @@ X 路由：
 Radar -> Beeclaw Provider
              |
              +-- beeclaw:x(auto)
-             +-- x_mcp / x_api / x_rss 自动选择
+             +-- x_mcp / x_api / twitterapi_io / x_rss 自动选择
              +-- browser-session 仅显式调试
 ```
 

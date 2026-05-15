@@ -112,7 +112,7 @@ X 示例：
 
 ```text
 provider=beeclaw:x
-execution_backend=x_mcp / x_api / x_rss / browser_session
+execution_backend=x_mcp / x_api / twitterapi_io / x_rss / browser_session
 ```
 
 当前已纳入 provider catalog 的平台：
@@ -154,7 +154,7 @@ X 是当前最完整的生产主链路。
 已支持：
 
 - `beeclaw:x` 默认 `mode=auto`。
-- 自动选择 backend：`x_mcp -> x_api -> x_rss -> browser_session`。
+- 自动选择 backend：`x_mcp -> x_api -> twitterapi_io -> x_rss -> browser_session`。
 - 账号 posts。
 - keyword recent search。
 - 单条 post 详情。
@@ -540,7 +540,7 @@ radar_handoff_to_organizer(content_ids=[...])
 | Beeclaw Provider Router | 可交付 | provider namespace 和 backend 自动选择 |
 | X 采集链路 | 可交付，待生产 credits 验收 | 支持 X MCP / API / RSS / browser fallback |
 | URL / RSS / Web / GitHub | 可交付 | Jina Reader、RSS parser、gh、universal_reader 可用 |
-| 小红书 / YouTube / Reddit 深度能力 | 框架可交付，深度采集待补齐 | 需要对应 MCP / CLI / API 验收 |
+| 小红书 / YouTube / Reddit 深度能力 | 可交付基础深度能力，待生产 backend 验收 | 小红书已支持关键词采集；YouTube 已支持关键词视频采集；Reddit 已支持关键词帖子采集；生产仍需 MCP / CLI / API 凭证和限流验收 |
 | 任务队列 / Worker | 可交付 | queued、retry、cancel、parent-child batch |
 | media_assets | 可交付 | 本地媒体状态、重试、manifest；对象存储待接 |
 | agent_feedback | 可交付 | AI 员工可稳定回复用户 |
@@ -554,7 +554,7 @@ radar_handoff_to_organizer(content_ids=[...])
 2. 在 MCP Manager 中注册 X MCP、小红书 MCP 等 backend MCP。
 3. 注入 Radar 到 Gateway 的 runtime identity。
 4. X Developer credits 可用，并完成小批量生产压测。
-5. 小红书、YouTube、Reddit 等平台准备真实凭证或 MCP。
+5. 小红书、YouTube、Reddit 等平台准备真实 MCP、CLI、API 凭证，并完成小批量生产验收。
 6. 媒体对象存储 bucket、权限和 CDN 策略。
 7. worker 进程生产托管和监控告警。
 

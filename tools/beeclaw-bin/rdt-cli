@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import urllib.parse
+import urllib.request
+
+
+def reddit_json_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.netloc:
+        raise ValueError("reddit URL is required")
+    path = parsed.path.rstrip("/")
+    if not path.endswith(".json"):
+        path = f"{path}.json"
+    query = urllib.parse.parse_qs(parsed.query)
+    query.setdefault("raw_json", ["1"])
+    return urllib.parse.urlunparse(
+        (parsed.scheme or "https", parsed.netloc, path, "", urllib.parse.urlencode(query, doseq=True), "")
+    )
+
+
+def fetch_json(url: str, timeout: int = 30):
+    request = urllib.request.Request(
+        reddit_json_url(url),
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Radar-Beeclaw-Reddit/1.0",
+        },
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8", errors="replace"))
+
+
+def extract_post(payload):
+    if isinstance(payload, list) and payload:
+        listing = payload[0]
+    else:
+        listing = payload
+    children = ((listing or {}).get("data") or {}).get("children") or []
+    if not children:
+        raise ValueError("reddit payload has no post")
+    data = children[0].get("data") or {}
+    return data
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Beeclaw bundled rdt-cli compatible Reddit reader")
+    parser.add_argument("--json", action="store_true", help="emit JSON output")
+    parser.add_argument("url")
+    args = parser.parse_args()
+
+    try:
+        post = extract_post(fetch_json(args.url))
+    except Exception as exc:
+        print(f"rdt-cli bundled reader failed: {exc}", file=sys.stderr)
+        return 2
+
+    permalink = post.get("permalink")
+    source_url = f"https://www.reddit.com{permalink}" if permalink else args.url
+    payload = {
+        "id": post.get("id") or post.get("name"),
+        "name": post.get("name"),
+        "title": post.get("title") or source_url,
+        "selftext": post.get("selftext") or "",
+        "url": source_url,
+        "permalink": permalink,
+        "subreddit": post.get("subreddit"),
+        "score": post.get("score"),
+        "num_comments": post.get("num_comments"),
+        "upvote_ratio": post.get("upvote_ratio"),
+        "created_utc": post.get("created_utc"),
+        "extra": {
+            "backend": "bundled-rdt-cli",
+            "thumbnail": post.get("thumbnail"),
+            "link_url": post.get("url"),
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False) if args.json else payload["selftext"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

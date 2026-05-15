@@ -1,0 +1,33 @@
+{
+  "name": "beeclaw-radar",
+  "version": "0.1.0",
+  "description": "Radar/Beeclaw data-collection tool installer for Qianfeng AI / Hermes Agent workflows.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "beeclaw-radar": "tools/npx-install.mjs"
+  },
+  "files": [
+    "AGENTS.md",
+    "README.md",
+    "install.sh",
+    ".env.example",
+    "requirements.txt",
+    "crawler",
+    "docs",
+    "tests",
+    "tools",
+    "tools/npx-install.mjs",
+    "接口文档",
+    "外网抓取账号0424.xlsx"
+  ],
+  "scripts": {
+    "doctor": "node tools/npx-install.mjs doctor",
+    "install:beeclaw": "node tools/npx-install.mjs install",
+    "start-api": "node tools/npx-install.mjs start-api"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

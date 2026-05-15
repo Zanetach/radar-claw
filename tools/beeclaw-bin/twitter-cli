@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from html import unescape
+
+
+def handle_from_input(value: str) -> str:
+    value = value.strip()
+    if value.startswith("@"):
+        return value[1:]
+    match = re.search(r"(?:x|twitter)\.com/([^/?#]+)/?", value)
+    if match:
+        handle = match.group(1)
+        if handle not in {"i", "home", "search"}:
+            return handle
+    return value
+
+
+def read_text(url: str, timeout: int = 30) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "Radar-Beeclaw-Twitter/1.0"})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=timeout) as response:
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.read().decode(charset, errors="replace")
+
+
+def strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", unescape(text or "")).strip()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Beeclaw bundled twitter-cli compatible RSS reader")
+    parser.add_argument("--json", action="store_true", help="emit JSON output")
+    parser.add_argument("target")
+    args = parser.parse_args()
+
+    handle = handle_from_input(args.target)
+    rss_url = f"https://api.xgo.ing/rss/user/{urllib.parse.quote(handle)}"
+    try:
+        root = ET.fromstring(read_text(rss_url))
+        channel = root.find("channel")
+        item = channel.find("item") if channel is not None else None
+        if item is None:
+            raise ValueError("no tweet item found")
+        link = item.findtext("link") or ""
+        description = item.findtext("description") or ""
+        title = item.findtext("title") or link or handle
+        guid = item.findtext("guid") or link or hashlib.sha256(title.encode("utf-8")).hexdigest()[:20]
+    except Exception as exc:
+        print(f"twitter-cli bundled reader failed: {exc}", file=sys.stderr)
+        return 2
+
+    payload = {
+        "id": str(guid).rsplit("/", 1)[-1],
+        "url": link,
+        "source_url": link,
+        "title": strip_html(title)[:120],
+        "content": strip_html(description) or strip_html(title),
+        "author": handle,
+        "extra": {
+            "backend": "bundled-twitter-cli",
+            "rss_url": rss_url,
+            "note": "No-key X reader via xgo RSS; metrics/media may be incomplete.",
+        },
+    }
+    print(json.dumps(payload, ensure_ascii=False) if args.json else payload["content"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

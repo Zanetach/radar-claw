@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1125" viewBox="0 0 1800 1125">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F7FBFF"/>
+      <stop offset="48%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#14B8A6"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#EF4444"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#1E3A8A" flood-opacity="0.16"/>
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 54px; font-weight: 800; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 24px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 25px; font-weight: 800; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 17px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 14px; fill: #64748B; letter-spacing: 0; }
+      .tiny { font-size: 13px; fill: #64748B; letter-spacing: 0; }
+      .white { fill: #FFFFFF; }
+      .muted { fill: #64748B; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.2; }
+      .soft { fill: #F8FAFC; stroke: #E2E8F0; stroke-width: 1; }
+      .blueText { fill: #1D4ED8; font-weight: 700; }
+      .tealText { fill: #0F766E; font-weight: 700; }
+      .amberText { fill: #B45309; font-weight: 700; }
+      .pillText { font-size: 14px; font-weight: 700; fill: #0F172A; letter-spacing: 0; }
+      .line { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrowBlue); }
+      .lineTeal { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowTeal); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1125" rx="34" fill="url(#bg)"/>
+  <path d="M1290 0 C1515 88 1580 238 1800 280 L1800 0 Z" fill="#DBEAFE" opacity="0.78"/>
+  <path d="M0 965 C260 890 430 1025 675 948 C920 870 1048 1034 1300 954 C1502 889 1615 1016 1800 928 L1800 1125 L0 1125 Z" fill="#E0F2FE" opacity="0.48"/>
+
+  <g class="font">
+    <g transform="translate(78 63)">
+      <rect x="0" y="0" width="78" height="78" rx="22" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="39" y="51" text-anchor="middle" font-size="38" font-weight="900" fill="#FFFFFF">R</text>
+    </g>
+    <text x="178" y="104" class="title">Radar 数据采集工具能力全景图</text>
+    <text x="181" y="142" class="subtitle">AI 员工可调用的数据采集底座：接入外部媒介平台，完成采集、入库、媒体索引和结构化回传</text>
+    <rect x="1356" y="72" width="365" height="50" rx="25" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <circle cx="1390" cy="97" r="8" fill="#22C55E"/>
+    <text x="1412" y="104" class="body" font-weight="700">Agent Runtime / MCP Tool Ready</text>
+
+    <rect x="72" y="190" width="442" height="355" rx="28" class="card" filter="url(#shadow)"/>
+    <text x="110" y="238" class="section">1. 面向谁使用</text>
+    <text x="110" y="278" class="body">入口是千蜂 AI / Hermes AI 员工。</text>
+    <g transform="translate(110 317)">
+      <rect x="0" y="0" width="365" height="48" rx="14" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="22" y="31" class="body" font-weight="700">用户自然语言下发采集任务</text>
+      <rect x="0" y="63" width="365" height="48" rx="14" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="22" y="94" class="body" font-weight="700">AI 员工调用 Radar MCP 工具</text>
+      <rect x="0" y="126" width="365" height="48" rx="14" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="22" y="157" class="body" font-weight="700">支持账号、关键词、URL、Excel 输入</text>
+    </g>
+    <text x="110" y="526" class="small">示例：@elonmusk / 7 天 / 原创 / 图片视频。</text>
+
+    <rect x="548" y="190" width="706" height="355" rx="28" class="card" filter="url(#shadow)"/>
+    <text x="586" y="238" class="section">2. 数据采集闭环</text>
+    <text x="586" y="278" class="body">Radar 负责执行、入库和回传；判断交给下游 Agent。</text>
+
+    <g transform="translate(586 315)">
+      <rect x="0" y="0" width="148" height="80" rx="20" fill="#EEF2FF" stroke="#C7D2FE"/>
+      <text x="74" y="34" text-anchor="middle" class="pillText">Radar MCP</text>
+      <text x="74" y="58" text-anchor="middle" class="small">工具入口</text>
+
+      <line x1="158" y1="40" x2="211" y2="40" class="line"/>
+      <rect x="222" y="0" width="158" height="80" rx="20" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="301" y="34" text-anchor="middle" class="pillText">Collection Task</text>
+      <text x="301" y="58" text-anchor="middle" class="small">任务 / 队列 / 重试</text>
+
+      <line x1="390" y1="40" x2="443" y2="40" class="line"/>
+      <rect x="454" y="-8" width="190" height="96" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="549" y="34" text-anchor="middle" font-size="20" font-weight="800" fill="#FFFFFF">Beeclaw</text>
+      <text x="549" y="60" text-anchor="middle" font-size="16" fill="#DBEAFE">Provider Engine</text>
+    </g>
+
+    <g transform="translate(614 430)">
+      <rect x="0" y="0" width="580" height="72" rx="20" fill="#F8FAFC" stroke="#E2E8F0"/>
+      <text x="28" y="30" class="body" font-weight="700">入库：</text>
+      <text x="88" y="30" class="body">正文、链接、平台 ID、互动指标、raw payload</text>
+      <text x="28" y="56" class="body" font-weight="700">媒体：</text>
+      <text x="88" y="56" class="body">图片/视频 metadata、下载状态、重试、manifest</text>
+    </g>
+
+    <rect x="1290" y="190" width="438" height="355" rx="28" class="card" filter="url(#shadow)"/>
+    <text x="1328" y="238" class="section">3. 对 AI 员工返回什么</text>
+    <text x="1328" y="278" class="body">采集完成后返回结构化结果。</text>
+    <g transform="translate(1328 318)">
+      <rect x="0" y="0" width="364" height="48" rx="14" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="20" y="31" class="body">任务 ID / 保存数 / 内容 ID</text>
+      <rect x="0" y="62" width="364" height="48" rx="14" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="20" y="93" class="body">provider / backend / 尝试记录</text>
+      <rect x="0" y="124" width="364" height="48" rx="14" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="20" y="155" class="body">警告 / 失败原因 / 下一步</text>
+    </g>
+    <text x="1328" y="524" class="small">整理、翻译、OCR、发布由下游 Agent 处理。</text>
+
+    <rect x="72" y="590" width="1092" height="402" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="110" y="640" class="section">4. 支持的媒介平台与能力范围</text>
+    <text x="110" y="676" class="body">已覆盖 22 类平台 / 26 个 provider。X 是最完整主链路，其它平台按 backend 深度逐步验收。</text>
+
+    <g transform="translate(110 715)">
+      <rect x="0" y="0" width="300" height="104" rx="24" fill="#0F172A" filter="url(#softShadow)"/>
+      <text x="28" y="35" font-size="22" font-weight="800" fill="#FFFFFF">X / Twitter</text>
+      <text x="28" y="66" font-size="16" fill="#CBD5E1">账号 posts、关键词搜索、单条详情</text>
+      <text x="28" y="90" font-size="16" fill="#CBD5E1">metrics、图片、视频、自动 fallback</text>
+
+      <rect x="324" y="0" width="300" height="104" rx="24" fill="#ECFDF5" stroke="#A7F3D0"/>
+      <text x="352" y="35" class="tealText" font-size="22">内容平台</text>
+      <text x="352" y="66" class="body">小红书、公众号、YouTube、B站</text>
+      <text x="352" y="90" class="body">抖音、微博、知乎</text>
+
+      <rect x="648" y="0" width="300" height="104" rx="24" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="676" y="35" class="blueText" font-size="22">知识与开发源</text>
+      <text x="676" y="66" class="body">GitHub、RSS、Web URL</text>
+      <text x="676" y="90" class="body">HackerNews、Medium 等</text>
+    </g>
+
+    <g transform="translate(110 850)">
+      <rect x="0" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="74" y="31" text-anchor="middle" class="pillText">飞书</text>
+      <rect x="162" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="236" y="31" text-anchor="middle" class="pillText">金山文档</text>
+      <rect x="324" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="398" y="31" text-anchor="middle" class="pillText">有道云</text>
+      <rect x="486" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="560" y="31" text-anchor="middle" class="pillText">Telegram</text>
+      <rect x="648" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="722" y="31" text-anchor="middle" class="pillText">Reddit</text>
+      <rect x="810" y="0" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="884" y="31" text-anchor="middle" class="pillText">IDCFlare</text>
+
+      <rect x="0" y="64" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="74" y="95" text-anchor="middle" class="pillText">小宇宙</text>
+      <rect x="162" y="64" width="148" height="48" rx="14" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="236" y="95" text-anchor="middle" class="pillText">喜马拉雅</text>
+      <rect x="324" y="64" width="310" height="48" rx="14" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="479" y="95" text-anchor="middle" class="pillText">可扩展：MCP / CLI / API backend</text>
+      <rect x="648" y="64" width="310" height="48" rx="14" fill="#FEF2F2" stroke="#FECACA"/>
+      <text x="803" y="95" text-anchor="middle" class="pillText">需授权：LinkedIn / Instagram / Amazon</text>
+    </g>
+
+    <rect x="1200" y="590" width="528" height="402" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="1238" y="640" class="section">5. 具体能干什么</text>
+    <g transform="translate(1238 682)">
+      <rect x="0" y="0" width="454" height="50" rx="16" fill="#EFF6FF" stroke="#BFDBFE"/>
+      <text x="20" y="32" class="body"><tspan font-weight="800">发起采集：</tspan>账号、关键词、URL、Excel</text>
+      <rect x="0" y="64" width="454" height="50" rx="16" fill="#F0FDFA" stroke="#99F6E4"/>
+      <text x="20" y="96" class="body"><tspan font-weight="800">自动路由：</tspan>按凭证、成本、健康状态选 backend</text>
+      <rect x="0" y="128" width="454" height="50" rx="16" fill="#FFF7ED" stroke="#FED7AA"/>
+      <text x="20" y="160" class="body"><tspan font-weight="800">生产任务：</tspan>队列、worker、重试、取消</text>
+      <rect x="0" y="192" width="454" height="50" rx="16" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="20" y="224" class="body"><tspan font-weight="800">数据沉淀：</tspan>原文、媒体、指标、raw payload</text>
+      <rect x="0" y="256" width="454" height="50" rx="16" fill="#EEF2FF" stroke="#C7D2FE"/>
+      <text x="20" y="288" class="body"><tspan font-weight="800">交给下游：</tspan>导出数据集 / 内容整理 Agent</text>
+    </g>
+
+    <rect x="72" y="1022" width="1656" height="64" rx="24" fill="#0F172A" filter="url(#softShadow)"/>
+    <text x="110" y="1062" font-size="20" font-weight="800" fill="#FFFFFF">当前交付状态：</text>
+    <text x="274" y="1062" font-size="20" fill="#D1FAE5">项目侧采集闭环可交付</text>
+    <text x="508" y="1062" font-size="19" fill="#CBD5E1">大规模生产还需接入 Platform MCP Gateway、X credits 压测、对象存储和深度 provider 验收。</text>
+  </g>
+</svg>

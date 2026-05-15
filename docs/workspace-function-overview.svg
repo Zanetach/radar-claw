@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="52%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#F0FDFA"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#1E3A8A" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 50px; font-weight: 850; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 24px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 28px; font-weight: 820; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 20px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 16px; fill: #64748B; letter-spacing: 0; }
+      .tiny { font-size: 14px; fill: #64748B; letter-spacing: 0; }
+      .label { font-size: 17px; font-weight: 760; fill: #0F172A; letter-spacing: 0; }
+      .white { fill: #FFFFFF; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.25; }
+      .blueSoft { fill: #EFF6FF; stroke: #BFDBFE; stroke-width: 1.2; }
+      .tealSoft { fill: #F0FDFA; stroke: #99F6E4; stroke-width: 1.2; }
+      .purpleSoft { fill: #F5F3FF; stroke: #DDD6FE; stroke-width: 1.2; }
+      .orangeSoft { fill: #FFF7ED; stroke: #FED7AA; stroke-width: 1.2; }
+      .line { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrowBlue); }
+      .lineTeal { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowTeal); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1200" rx="36" fill="url(#bg)"/>
+  <path d="M1250 0 C1480 82 1580 232 1800 292 L1800 0 Z" fill="#DBEAFE" opacity="0.7"/>
+  <path d="M0 1010 C270 928 430 1084 704 985 C930 902 1060 1064 1330 976 C1548 904 1634 1048 1800 960 L1800 1200 L0 1200 Z" fill="#CCFBF1" opacity="0.32"/>
+
+  <g class="font">
+    <g transform="translate(76 58)">
+      <rect x="0" y="0" width="82" height="82" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="41" y="54" text-anchor="middle" font-size="39" font-weight="900" fill="#FFFFFF">W</text>
+    </g>
+    <text x="188" y="94" class="title">千蜂 AI Workspace 功能示意图</text>
+    <text x="190" y="135" class="subtitle">用户通过统一对话入口调用三个 AI Agent，完成采集、整理、发布的业务闭环。</text>
+    <rect x="1295" y="76" width="380" height="54" rx="27" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <circle cx="1330" cy="103" r="8" fill="#22C55E"/>
+    <text x="1352" y="110" font-size="19" font-weight="760" fill="#334155">用户主入口，不是运维后台</text>
+
+    <rect x="78" y="190" width="1644" height="300" rx="32" class="card" filter="url(#shadow)"/>
+    <text x="126" y="244" class="section">1. 统一对话入口</text>
+    <text x="126" y="284" class="body">用户只需要描述目标，Workspace 负责选择 Agent、生成任务、展示进度和下一步动作。</text>
+    <g transform="translate(126 324)">
+      <rect x="0" y="0" width="1030" height="112" rx="24" fill="#F8FAFC" stroke="#CBD5E1"/>
+      <text x="34" y="45" class="body" fill="#64748B">输入任务，例如：</text>
+      <text x="34" y="82" font-size="25" font-weight="780" fill="#0F172A">“采集 X 和小红书上 AI 工具热门内容，整理后排期到 10 个矩阵账号。”</text>
+      <rect x="1080" y="0" width="360" height="112" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="1260" y="48" text-anchor="middle" font-size="24" font-weight="850" fill="#FFFFFF">AI 员工理解意图</text>
+      <text x="1260" y="80" text-anchor="middle" font-size="17" fill="#DFF7FF">平台 / 范围 / 规则 / 下一步</text>
+    </g>
+
+    <rect x="78" y="530" width="510" height="390" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="118" y="570" width="430" height="72" rx="22" fill="url(#blue)"/>
+    <text x="333" y="616" text-anchor="middle" font-size="27" font-weight="900" fill="#FFFFFF">内容采集 Agent</text>
+    <text x="118" y="684" class="body">负责把外部平台内容变成原始数据资产。</text>
+    <g transform="translate(118 724)">
+      <rect x="0" y="0" width="430" height="42" rx="13" class="blueSoft"/>
+      <text x="22" y="27" class="label">抓取：账号 / 关键词 / URL / Excel</text>
+      <rect x="0" y="54" width="430" height="42" rx="13" class="blueSoft"/>
+      <text x="22" y="81" class="label">URL 去重 + 语义去重</text>
+      <rect x="0" y="108" width="430" height="42" rx="13" class="blueSoft"/>
+      <text x="22" y="135" class="label">热度评分 + 合规过滤</text>
+      <rect x="0" y="162" width="430" height="42" rx="13" class="blueSoft"/>
+      <text x="22" y="189" class="label">输出 raw content + media_assets</text>
+    </g>
+
+    <rect x="645" y="530" width="510" height="390" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="685" y="570" width="430" height="72" rx="22" fill="url(#purple)"/>
+    <text x="900" y="616" text-anchor="middle" font-size="27" font-weight="900" fill="#FFFFFF">内容整理 Agent</text>
+    <text x="685" y="684" class="body">从已采集数据中选择内容，整理成可发布素材。</text>
+    <g transform="translate(685 724)">
+      <rect x="0" y="0" width="430" height="42" rx="13" class="purpleSoft"/>
+      <text x="22" y="27" class="label">清洗：去噪、补字段、规范格式</text>
+      <rect x="0" y="54" width="430" height="42" rx="13" class="purpleSoft"/>
+      <text x="22" y="81" class="label">翻译：保留原文 + 中文翻译</text>
+      <rect x="0" y="108" width="430" height="42" rx="13" class="purpleSoft"/>
+      <text x="22" y="135" class="label">LLM 8 类分类 + 标签/摘要</text>
+      <rect x="0" y="162" width="430" height="42" rx="13" class="purpleSoft"/>
+      <text x="22" y="189" class="label">输出 classified content</text>
+    </g>
+
+    <rect x="1212" y="530" width="510" height="390" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="1252" y="570" width="430" height="72" rx="22" fill="url(#teal)"/>
+    <text x="1467" y="616" text-anchor="middle" font-size="27" font-weight="900" fill="#FFFFFF">矩阵发布 Agent</text>
+    <text x="1252" y="684" class="body">把审核内容分发到矩阵账号并回收数据。</text>
+    <g transform="translate(1252 724)">
+      <rect x="0" y="0" width="430" height="42" rx="13" class="tealSoft"/>
+      <text x="22" y="27" class="label">排期：按账号定位和发布时间</text>
+      <rect x="0" y="54" width="430" height="42" rx="13" class="tealSoft"/>
+      <text x="22" y="81" class="label">发布：10 个矩阵账号分发</text>
+      <rect x="0" y="108" width="430" height="42" rx="13" class="tealSoft"/>
+      <text x="22" y="135" class="label">异常重试 + 发布状态追踪</text>
+      <rect x="0" y="162" width="430" height="42" rx="13" class="tealSoft"/>
+      <text x="22" y="189" class="label">输出发布结果 + 数据回流</text>
+    </g>
+
+    <path d="M588 720 C618 720 615 720 644 720" class="line"/>
+    <path d="M1155 720 C1185 720 1182 720 1211 720" class="lineTeal"/>
+    <text x="616" y="694" text-anchor="middle" class="small">raw content</text>
+    <text x="1184" y="694" text-anchor="middle" class="small">classified content</text>
+
+    <rect x="96" y="980" width="1608" height="118" rx="30" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <text x="140" y="1026" class="section">2. Workspace 核心模块</text>
+    <g transform="translate(430 1000)">
+      <rect x="0" y="0" width="184" height="46" rx="23" class="blueSoft"/>
+      <text x="92" y="30" text-anchor="middle" class="label">对话入口</text>
+      <rect x="204" y="0" width="184" height="46" rx="23" class="blueSoft"/>
+      <text x="296" y="30" text-anchor="middle" class="label">任务中心</text>
+      <rect x="408" y="0" width="184" height="46" rx="23" class="tealSoft"/>
+      <text x="500" y="30" text-anchor="middle" class="label">原始内容库</text>
+      <rect x="612" y="0" width="184" height="46" rx="23" class="purpleSoft"/>
+      <text x="704" y="30" text-anchor="middle" class="label">整理内容库</text>
+      <rect x="816" y="0" width="184" height="46" rx="23" class="orangeSoft"/>
+      <text x="908" y="30" text-anchor="middle" class="label">发布排期</text>
+    </g>
+    <text x="900" y="1076" text-anchor="middle" font-size="21" font-weight="800" fill="#0F172A">核心：让用户在一个工作台里完成“发起任务 → 查看结果 → 推进下一步”。</text>
+  </g>
+</svg>

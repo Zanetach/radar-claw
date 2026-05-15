@@ -26,7 +26,7 @@ Radar 的核心价值是把“外部平台数据采集”标准化成 AI 员工�
 - 产品入口：AI Agent / Hermes / 千蜂 AI 员工。
 - 用户不直接使用 Radar Web；Radar Web 已移除用户入口，只保留 HTTP API、MCP tools、Skill、文档和测试。
 - Beeclaw 已作为 Radar 对外 provider engine 接入；upstream feedgrab 作为可替换 backend 保留。
-- X 平台对外统一为 `beeclaw:x`，默认 `mode=auto` 自动选择 `x_mcp`、`x_api`、`x_rss`；账号级采集和关键词 recent search 已进入同一采集闭环。
+- X 平台对外统一为 `beeclaw:x`，默认 `mode=auto` 自动选择 `x_mcp`、`x_api`、`twitterapi_io`、`x_rss`；账号级采集和关键词 recent search 已进入同一采集闭环。
 - X MCP 已提供真实 credits 压测入口，可先估算账号数和 API 调用量，再按需创建 queued batch 任务。
 - 非 X 平台当前优先支持 URL/content 采集闭环，统一走 Beeclaw URL provider。
 - 采集结果保存到 SQLite，后续可扩展同步飞书多维表/云盘。
@@ -260,8 +260,8 @@ X -> YouTube -> RSS/Web -> 小红书 -> 微信公众号 -> B站/抖音/微博 ->
 
 | 平台 | 当前能力 | 说明 |
 | --- | --- | --- |
-| X / Twitter | 账号采集、关键词 recent search、RSS fallback、X MCP、API、credits 压测入口 | 对外 `beeclaw:x`，默认 `auto` 自动选择 `x_mcp -> x_api -> x_rss`；仍兼容显式 `beeclaw:x_mcp` |
-| YouTube | 账号 RSS / URL content | 可无 token 获取基础视频元数据 |
+| X / Twitter | 账号采集、关键词 recent search、RSS fallback、X MCP、API、TwitterAPI.io、credits 压测入口 | 对外 `beeclaw:x`，默认 `auto` 自动选择 `x_mcp -> x_api -> twitterapi_io -> x_rss`；仍兼容显式 `beeclaw:x_mcp` |
+| YouTube | 关键词视频采集、账号 RSS/API、URL content | 关键词采集优先 YouTube API，未配置 API 时可走 `yt-dlp` 搜索；账号可走 RSS/API |
 | 小红书 / XHS | URL/content、关键词搜索、`xhs-cli` URL backend | 关键词搜索已走 `beeclaw:xhs`，URL 采集优先 `xhs-cli`，底层可降级到 feedgrab XHS search / UniversalReader |
 | 微信公众号 / WeChat | URL/content | 账号级深度采集待增强 |
 | Bilibili | URL/content | 账号级/关键词级待增强 |
@@ -274,7 +274,7 @@ X -> YouTube -> RSS/Web -> 小红书 -> 微信公众号 -> B站/抖音/微博 ->
 | 有道云笔记 / Youdao | URL/content | 私有笔记需要授权或公开链接 |
 | RSS | feed URL | RSS/Atom/feed 地址 |
 | Telegram | URL/content | 优先公开频道 URL |
-| Reddit | URL/content、`rdt-cli` URL backend | URL 采集优先 `rdt-cli`，账号级/关键词级待增强 |
+| Reddit | 关键词帖子采集、URL/content、`rdt-cli` URL backend | 关键词采集已支持 Reddit public search；URL 采集优先 `rdt-cli`，账号级/评论树深度待增强 |
 | HackerNews | URL/content | HN item/page |
 | Medium | URL/content | 文章 URL |
 | LinuxDo | URL/content | topic/page URL |
@@ -342,7 +342,7 @@ AI 员工应把最终结果、失败 backend 和 fallback 说明反馈给用户�
 默认 X 通道为 `auto`，不是强制 XMCP。`auto` 的尝试顺序：
 
 ```text
-beeclaw:x(auto) -> x_mcp -> x_api -> x_rss
+beeclaw:x(auto) -> x_mcp -> x_api -> twitterapi_io -> x_rss
 ```
 
 说明：
@@ -368,7 +368,7 @@ X_API_TOOL_ALLOWLIST="getUsersByUsername,getUsersPosts,getUsersIdPosts,getPosts,
 
 ```text
 beeclaw:x
-  backends: x_mcp, x_api, x_rss, twitter-cli, browser_session
+  backends: x_mcp, x_api, twitterapi_io, x_rss, twitter-cli, browser_session
 beeclaw:youtube
   backends: yt-dlp, youtube_api, rss
 beeclaw:xhs
@@ -403,10 +403,10 @@ beeclaw:ximalaya
 当前已接入可执行 backend：
 
 - `beeclaw:web -> Jina Reader`：将通用网页转为可读文本。
-- `beeclaw:youtube -> yt-dlp`：读取视频标题、描述、播放/互动指标和缩略图 metadata。
+- `beeclaw:youtube -> youtube_api / yt-dlp`：按关键词搜索视频，读取标题、描述、播放/互动指标和缩略图 metadata。
 - `beeclaw:github -> gh`：读取 repo 描述、star、fork、语言和更新时间。
 - `beeclaw:xhs -> xhs-cli`：读取小红书笔记标题、正文、互动和图片/视频 metadata。
-- `beeclaw:reddit -> rdt-cli`：读取 Reddit thread 标题、正文、score、评论数和 subreddit metadata。
+- `beeclaw:reddit -> reddit_public_search / rdt-cli`：按关键词搜索 Reddit 帖子，读取 thread 标题、正文、score、评论数和 subreddit metadata。
 - `beeclaw:rss -> rss_parser`：内置解析 RSS 2.0、Atom 和 RDF feed，按 entry 拆成多条原始内容入库，并保留标题、链接、发布时间、摘要和 media enclosure metadata。
 - 所有 URL/content 路由仍保留 upstream feedgrab `UniversalReader` 兜底。
 

@@ -13,6 +13,7 @@ from html import unescape
 from hashlib import sha256
 from typing import Any
 
+from .cli_tools import resolve_cli
 from .platforms import infer_feedgrab_platform_from_url, normalize_feedgrab_platform
 
 
@@ -112,6 +113,28 @@ def _attach_backend_metadata(content: Any, *, provider_backend: str, backend_att
     return content
 
 
+def _prepend_backend_attempts(content: Any, backend_attempts: list[dict[str, Any]]) -> Any:
+    if not backend_attempts:
+        return content
+    if not isinstance(content, dict):
+        if hasattr(content, "to_dict"):
+            content = content.to_dict()
+        else:
+            content = {
+                "source_type": getattr(content, "source_type", "web"),
+                "source_name": getattr(content, "source_name", "UniversalReader"),
+                "title": getattr(content, "title", None),
+                "content": getattr(content, "content", None),
+                "url": getattr(content, "url", None),
+                "id": getattr(content, "id", None),
+                "extra": getattr(content, "extra", {}) or {},
+            }
+    extra = _content_extra(content)
+    existing = extra.get("backend_attempts")
+    extra["backend_attempts"] = [*backend_attempts, *(existing if isinstance(existing, list) else [])]
+    return content
+
+
 def _http_text(url: str, *, timeout: int = 30) -> str:
     request = urllib.request.Request(url, headers={"Accept": "text/plain", "User-Agent": "Radar-Beeclaw/1.0"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -149,6 +172,45 @@ def _read_with_jina(url: str) -> dict[str, Any]:
         "extra": {
             "provider_backend": "Jina Reader",
             "backend_attempts": [_attempt("Jina Reader", "success")],
+        },
+    }
+
+
+def _read_with_agent_browser(url: str) -> dict[str, Any]:
+    args, uses_default = _cli_args(("BEECLAW_AGENT_BROWSER_CMD", "AGENT_BROWSER_CMD"), ["agent-browser", "--json"], url)
+    if uses_default:
+        agent_browser = resolve_cli("agent-browser")
+        if not agent_browser:
+            raise FeedgrabUnavailable("agent-browser is not installed or configured")
+        args[0] = agent_browser
+    timeout = int(os.getenv("BEECLAW_AGENT_BROWSER_TIMEOUT", os.getenv("AGENT_BROWSER_TIMEOUT", "120")))
+    payload = _command_json(args, timeout=timeout)
+    extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
+    source_url = _first(payload, "url", "source_url", "final_url") or url
+    content = _first(payload, "markdown", "content", "text", "body") or ""
+    title = _first(payload, "title", "name") or _markdown_title(str(content), source_url)
+    images = _list_value(_first(payload, "images", "image_urls") or extra.get("images"))
+    videos = _list_value(_first(payload, "videos", "video_urls") or extra.get("videos"))
+    media = _list_value(_first(payload, "media", "media_assets") or extra.get("media") or extra.get("media_assets"))
+    return {
+        "source_type": normalize_feedgrab_platform(_first(payload, "source_type", "platform") or "web") or "web",
+        "source_name": "agent-browser",
+        "title": title,
+        "content": content,
+        "url": source_url,
+        "id": str(_first(payload, "id", "content_id") or sha256(str(source_url).encode("utf-8")).hexdigest()[:20]),
+        "extra": {
+            **extra,
+            "provider_backend": "agent-browser",
+            "backend_attempts": [_attempt("agent-browser", "success")],
+            "images": images,
+            "videos": videos,
+            "media": media,
+            "raw": {
+                key: payload.get(key)
+                for key in ("id", "url", "source_url", "final_url", "title")
+                if payload.get(key) is not None
+            },
         },
     }
 
@@ -287,9 +349,10 @@ def _read_with_rss_parser(url: str) -> dict[str, Any]:
 
 
 def _read_with_ytdlp(url: str) -> dict[str, Any]:
-    if not shutil.which("yt-dlp"):
+    ytdlp = resolve_cli("yt-dlp")
+    if not ytdlp:
         raise FeedgrabUnavailable("yt-dlp is not installed")
-    payload = _command_json(["yt-dlp", "--dump-json", "--skip-download", url], timeout=120)
+    payload = _command_json([ytdlp, "--dump-json", "--skip-download", url], timeout=120)
     thumbnails = payload.get("thumbnails") or []
     images = [item.get("url") for item in thumbnails if isinstance(item, dict) and item.get("url")]
     raw_summary = {
@@ -369,8 +432,11 @@ def _read_with_gh(url: str) -> dict[str, Any]:
 
 def _read_with_xhs_cli(url: str) -> dict[str, Any]:
     args, uses_default = _cli_args(("BEECLAW_XHS_CLI_CMD", "XHS_CLI_CMD"), ["xhs-cli", "--json"], url)
-    if uses_default and not shutil.which("xhs-cli"):
-        raise FeedgrabUnavailable("xhs-cli is not installed")
+    if uses_default:
+        xhs_cli = resolve_cli("xhs-cli")
+        if not xhs_cli:
+            raise FeedgrabUnavailable("xhs-cli is not installed")
+        args[0] = xhs_cli
     payload = _command_json(args, timeout=90)
     extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
     note_id = str(_first(payload, "note_id", "id", "aweme_id") or sha256(url.encode("utf-8")).hexdigest()[:20])
@@ -406,8 +472,11 @@ def _read_with_xhs_cli(url: str) -> dict[str, Any]:
 
 def _read_with_rdt_cli(url: str) -> dict[str, Any]:
     args, uses_default = _cli_args(("BEECLAW_RDT_CLI_CMD", "RDT_CLI_CMD"), ["rdt-cli", "--json"], url)
-    if uses_default and not shutil.which("rdt-cli"):
-        raise FeedgrabUnavailable("rdt-cli is not installed")
+    if uses_default:
+        rdt_cli = resolve_cli("rdt-cli")
+        if not rdt_cli:
+            raise FeedgrabUnavailable("rdt-cli is not installed")
+        args[0] = rdt_cli
     payload = _command_json(args, timeout=90)
     extra = payload.get("extra") if isinstance(payload.get("extra"), dict) else {}
     permalink = _first(payload, "permalink")
@@ -449,6 +518,10 @@ def _read_url_with_backend(url: str, *, platform: str | None, backend_hint: str 
     if backend in {"universal_reader", "feedgrab:universal_reader", "beeclaw:universal_reader"}:
         raise FeedgrabUnavailable("explicit universal_reader fallback")
 
+    if backend in {"jina", "jina reader", "jina_reader"}:
+        return _read_with_jina(url)
+    if backend in {"agent-browser", "agent_browser", "browser", "headless_browser"}:
+        return _read_with_agent_browser(url)
     if platform == "youtube" and backend in {"", "auto", "yt-dlp", "ytdlp"}:
         return _read_with_ytdlp(url)
     if platform == "github" and backend in {"", "auto", "gh", "github_cli"}:
@@ -476,24 +549,57 @@ def _specialized_backend_name(platform: str | None, backend_hint: str | None) ->
         return "rdt-cli"
     if platform == "rss" and backend in {"", "auto", "rss", "rss_parser", "rss-parser"}:
         return "rss_parser"
-    if platform in {"", "web", None} and backend in {"", "auto", "jina", "jina reader", "jina_reader"}:
+    if backend in {"agent-browser", "agent_browser", "browser", "headless_browser"}:
+        return "agent-browser"
+    if backend in {"jina", "jina reader", "jina_reader"} or (platform in {"", "web", None} and backend in {"", "auto"}):
         return "Jina Reader"
     return None
+
+
+AUTO_URL_BACKENDS_BY_PLATFORM = {
+    "youtube": ("yt-dlp",),
+    "github": ("gh",),
+    "xhs": ("xhs-cli",),
+    "reddit": ("rdt-cli",),
+    "rss": ("rss_parser",),
+}
+GENERIC_URL_BACKENDS = ("Jina Reader", "agent-browser")
+
+
+def _normalize_backend_hint(backend_hint: str | None) -> str:
+    return (backend_hint or "").strip()
+
+
+def _backend_candidates(platform: str | None, backend_hint: str | None) -> list[str]:
+    raw_hint = _normalize_backend_hint(backend_hint)
+    normalized_hint = raw_hint.lower()
+    if normalized_hint in {"universal_reader", "feedgrab:universal_reader", "beeclaw:universal_reader"}:
+        return []
+    if raw_hint and normalized_hint != "auto":
+        return [raw_hint]
+
+    candidates: list[str] = []
+    for backend in AUTO_URL_BACKENDS_BY_PLATFORM.get(platform or "web", ()):
+        if backend not in candidates:
+            candidates.append(backend)
+    for backend in GENERIC_URL_BACKENDS:
+        if backend not in candidates:
+            candidates.append(backend)
+    return candidates
 
 
 def read_url(url: str, platform: str | None = None, backend_hint: str | None = None) -> Any:
     """Read one URL through Beeclaw backends, falling back to upstream feedgrab."""
     platform_name = normalize_feedgrab_platform(platform) or infer_feedgrab_platform_from_url(url) or "web"
     backend_attempts: list[dict[str, Any]] = []
-    try:
-        return _read_url_with_backend(url, platform=platform_name, backend_hint=backend_hint)
-    except FeedgrabUnavailable as exc:
-        backend_name = _specialized_backend_name(platform_name, backend_hint)
-        if backend_name:
+    for candidate in _backend_candidates(platform_name, backend_hint):
+        backend_name = _specialized_backend_name(platform_name, candidate) or candidate
+        try:
+            content = _read_url_with_backend(url, platform=platform_name, backend_hint=candidate)
+            return _prepend_backend_attempts(content, backend_attempts)
+        except FeedgrabUnavailable as exc:
             backend_attempts.append(_attempt(backend_name, "failed", str(exc)))
-    except Exception as exc:
-        backend_name = _specialized_backend_name(platform_name, backend_hint)
-        if backend_name:
+        except Exception as exc:
             backend_attempts.append(_attempt(backend_name, "failed", str(exc)))
 
     try:

@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1200" viewBox="0 0 1800 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FBFF"/>
+      <stop offset="52%" stop-color="#EFF6FF"/>
+      <stop offset="100%" stop-color="#F8FAFC"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#22C55E"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7C3AED"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F97316"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <filter id="shadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#1E3A8A" flood-opacity="0.14"/>
+    </filter>
+    <filter id="softShadow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0F172A" flood-opacity="0.10"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="arrowPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7C3AED"/>
+    </marker>
+    <style>
+      .font { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 48px; font-weight: 850; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 23px; fill: #475569; letter-spacing: 0; }
+      .section { font-size: 24px; font-weight: 820; fill: #0F172A; letter-spacing: 0; }
+      .body { font-size: 18px; fill: #334155; letter-spacing: 0; }
+      .small { font-size: 15px; fill: #64748B; letter-spacing: 0; }
+      .tiny { font-size: 13px; fill: #64748B; letter-spacing: 0; }
+      .label { font-size: 16px; font-weight: 760; fill: #0F172A; letter-spacing: 0; }
+      .card { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.2; }
+      .panel { fill: #FFFFFF; stroke: #D7E3F4; stroke-width: 1.1; }
+      .blueSoft { fill: #EFF6FF; stroke: #BFDBFE; stroke-width: 1.1; }
+      .tealSoft { fill: #F0FDFA; stroke: #99F6E4; stroke-width: 1.1; }
+      .purpleSoft { fill: #F5F3FF; stroke: #DDD6FE; stroke-width: 1.1; }
+      .orangeSoft { fill: #FFF7ED; stroke: #FED7AA; stroke-width: 1.1; }
+      .graySoft { fill: #F8FAFC; stroke: #CBD5E1; stroke-width: 1.1; }
+      .line { stroke: #2563EB; stroke-width: 4; fill: none; marker-end: url(#arrowBlue); }
+      .lineTeal { stroke: #0F766E; stroke-width: 4; fill: none; marker-end: url(#arrowTeal); }
+      .linePurple { stroke: #7C3AED; stroke-width: 4; fill: none; marker-end: url(#arrowPurple); }
+      .dash { stroke-dasharray: 9 8; }
+    </style>
+  </defs>
+
+  <rect width="1800" height="1200" rx="36" fill="url(#bg)"/>
+  <path d="M1238 0 C1488 88 1580 230 1800 292 L1800 0 Z" fill="#DBEAFE" opacity="0.72"/>
+  <path d="M0 1016 C275 930 434 1080 704 986 C948 902 1070 1068 1334 978 C1544 908 1642 1050 1800 966 L1800 1200 L0 1200 Z" fill="#CCFBF1" opacity="0.28"/>
+
+  <g class="font">
+    <g transform="translate(76 58)">
+      <rect x="0" y="0" width="82" height="82" rx="24" fill="url(#blue)" filter="url(#softShadow)"/>
+      <text x="41" y="54" text-anchor="middle" font-size="39" font-weight="900" fill="#FFFFFF">R</text>
+    </g>
+    <text x="188" y="94" class="title">技术视角：Radar 数据采集调用链路</text>
+    <text x="190" y="135" class="subtitle">AI 员工只调用 Radar MCP；Radar 负责任务、队列、provider 路由、入库、媒体资产和结构化反馈。</text>
+    <rect x="1268" y="76" width="410" height="54" rx="27" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <circle cx="1304" cy="103" r="8" fill="#22C55E"/>
+    <text x="1326" y="110" font-size="19" font-weight="760" fill="#334155">平台 token 由 MCP Manager 管理</text>
+
+    <!-- Left: Agent runtime -->
+    <rect x="78" y="200" width="330" height="296" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="112" y="232" width="262" height="56" rx="22" fill="url(#blue)"/>
+    <text x="243" y="268" text-anchor="middle" font-size="22" font-weight="900" fill="#FFFFFF">千蜂 / Hermes Runtime</text>
+    <text x="112" y="326" class="section">AI 员工</text>
+    <g transform="translate(112 350)">
+      <rect x="0" y="0" width="262" height="38" rx="12" class="blueSoft"/>
+      <text x="18" y="25" class="label">自然语言任务</text>
+      <rect x="0" y="50" width="262" height="38" rx="12" class="blueSoft"/>
+      <text x="18" y="75" class="label">radar-data-collection Skill</text>
+      <rect x="0" y="100" width="262" height="38" rx="12" class="blueSoft"/>
+      <text x="18" y="125" class="label">定时调度归 runtime</text>
+    </g>
+
+    <!-- MCP / CLI -->
+    <rect x="470" y="200" width="330" height="296" rx="30" class="card" filter="url(#shadow)"/>
+    <rect x="504" y="232" width="262" height="56" rx="22" fill="url(#purple)"/>
+    <text x="635" y="268" text-anchor="middle" font-size="22" font-weight="900" fill="#FFFFFF">Radar 工具入口</text>
+    <g transform="translate(504 324)">
+      <rect x="0" y="0" width="262" height="48" rx="14" class="purpleSoft"/>
+      <text x="18" y="30" class="label">Radar MCP Tools</text>
+      <rect x="0" y="62" width="262" height="48" rx="14" class="purpleSoft"/>
+      <text x="18" y="92" class="label">radar_agent_collect</text>
+      <rect x="0" y="124" width="262" height="48" rx="14" class="graySoft"/>
+      <text x="18" y="154" class="label">Beeclaw CLI 可选入口</text>
+    </g>
+
+    <!-- Radar API runtime -->
+    <rect x="862" y="200" width="430" height="430" rx="32" class="card" filter="url(#shadow)"/>
+    <rect x="900" y="232" width="354" height="56" rx="22" fill="url(#blue)"/>
+    <text x="1077" y="268" text-anchor="middle" font-size="22" font-weight="900" fill="#FFFFFF">Radar API / Task Runtime</text>
+    <g transform="translate(900 322)">
+      <rect x="0" y="0" width="354" height="42" rx="13" class="blueSoft"/>
+      <text x="20" y="27" class="label">解析任务：账号 / 关键词 / URL / Excel</text>
+      <rect x="0" y="54" width="354" height="42" rx="13" class="blueSoft"/>
+      <text x="20" y="81" class="label">创建 collection task / parent-child batch</text>
+      <rect x="0" y="108" width="354" height="42" rx="13" class="blueSoft"/>
+      <text x="20" y="135" class="label">Worker 执行 queued / retry / cancel</text>
+      <rect x="0" y="162" width="354" height="42" rx="13" class="blueSoft"/>
+      <text x="20" y="189" class="label">生成 agent_feedback / next_actions</text>
+    </g>
+    <text x="900" y="558" class="small">失败、rate limit、credits、backend attempts 都写入报告。</text>
+
+    <!-- Provider router -->
+    <rect x="1354" y="200" width="368" height="430" rx="32" class="card" filter="url(#shadow)"/>
+    <rect x="1388" y="232" width="300" height="56" rx="22" fill="url(#teal)"/>
+    <text x="1538" y="268" text-anchor="middle" font-size="22" font-weight="900" fill="#FFFFFF">Beeclaw Provider Router</text>
+    <g transform="translate(1388 322)">
+      <rect x="0" y="0" width="300" height="42" rx="13" class="tealSoft"/>
+      <text x="20" y="27" class="label">X 自动路由：mcp / api / rss</text>
+      <rect x="0" y="54" width="300" height="42" rx="13" class="tealSoft"/>
+      <text x="20" y="81" class="label">youtube / xhs / reddit / rss</text>
+      <rect x="0" y="108" width="300" height="42" rx="13" class="tealSoft"/>
+      <text x="20" y="135" class="label">github / web / URL providers</text>
+      <rect x="0" y="162" width="300" height="42" rx="13" class="tealSoft"/>
+      <text x="20" y="189" class="label">标准化 ContentItem + media</text>
+    </g>
+    <text x="1388" y="558" class="small">对外稳定 provider，内部 backend 可替换。</text>
+
+    <path d="M408 348 L468 348" class="line"/>
+    <path d="M800 348 L860 348" class="linePurple"/>
+    <path d="M1292 348 L1352 348" class="lineTeal"/>
+
+    <!-- Backend layer -->
+    <rect x="78" y="700" width="512" height="260" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="116" y="754" class="section">Platform MCP Gateway 路径</text>
+    <text x="116" y="786" class="body">生产推荐：Radar 通过平台网关调用已配置 backend MCP。</text>
+    <g transform="translate(116 822)">
+      <rect x="0" y="0" width="206" height="46" rx="15" class="purpleSoft"/>
+      <text x="103" y="30" text-anchor="middle" class="label">MCP Manager</text>
+      <path d="M220 23 L278 23" class="linePurple"/>
+      <rect x="292" y="0" width="164" height="46" rx="15" class="purpleSoft"/>
+      <text x="374" y="30" text-anchor="middle" class="label">Gateway</text>
+      <rect x="0" y="76" width="456" height="46" rx="15" class="purpleSoft"/>
+      <text x="24" y="106" class="label">X MCP / 小红书 MCP / 未来平台 MCP</text>
+    </g>
+    <text x="116" y="952" class="small">平台密钥、登录态、allowlist 不落到 Radar。</text>
+
+    <rect x="644" y="700" width="512" height="260" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="682" y="754" class="section">本地 / fallback backend 路径</text>
+    <text x="682" y="786" class="body">用于无网关、低成本兜底、开发调试和 URL 采集。</text>
+    <g transform="translate(682 822)">
+      <rect x="0" y="0" width="206" height="44" rx="14" class="tealSoft"/>
+      <text x="103" y="29" text-anchor="middle" class="label">x_api / x_rss</text>
+      <rect x="224" y="0" width="206" height="44" rx="14" class="tealSoft"/>
+      <text x="327" y="29" text-anchor="middle" class="label">browser_session</text>
+      <rect x="0" y="62" width="206" height="44" rx="14" class="tealSoft"/>
+      <text x="103" y="91" text-anchor="middle" class="label">yt-dlp / gh / rdt-cli</text>
+      <rect x="224" y="62" width="206" height="44" rx="14" class="tealSoft"/>
+      <text x="327" y="91" text-anchor="middle" class="label">Jina / rss_parser</text>
+    </g>
+    <text x="682" y="948" class="small">失败会记录 backend_attempts，不伪装完整能力。</text>
+
+    <rect x="1210" y="700" width="512" height="260" rx="30" class="card" filter="url(#shadow)"/>
+    <text x="1248" y="754" class="section">外部平台与返回数据</text>
+    <text x="1248" y="786" class="body">平台返回原文、媒体、互动指标和 raw payload。</text>
+    <g transform="translate(1248 822)">
+      <rect x="0" y="0" width="120" height="42" rx="14" class="orangeSoft"/>
+      <text x="60" y="27" text-anchor="middle" class="label">X</text>
+      <rect x="136" y="0" width="120" height="42" rx="14" class="orangeSoft"/>
+      <text x="196" y="27" text-anchor="middle" class="label">XHS</text>
+      <rect x="272" y="0" width="154" height="42" rx="14" class="orangeSoft"/>
+      <text x="349" y="27" text-anchor="middle" class="label">YouTube</text>
+      <rect x="0" y="60" width="120" height="42" rx="14" class="orangeSoft"/>
+      <text x="60" y="87" text-anchor="middle" class="label">Reddit</text>
+      <rect x="136" y="60" width="120" height="42" rx="14" class="orangeSoft"/>
+      <text x="196" y="87" text-anchor="middle" class="label">RSS</text>
+      <rect x="272" y="60" width="154" height="42" rx="14" class="orangeSoft"/>
+      <text x="349" y="87" text-anchor="middle" class="label">Web / GitHub</text>
+    </g>
+    <text x="1248" y="930" class="small">媒体下载失败不阻断内容入库，进入重试队列。</text>
+
+    <path d="M1510 630 C1510 660 334 660 334 698" class="linePurple"/>
+    <path d="M1538 630 C1538 660 900 660 900 698" class="lineTeal"/>
+    <path d="M1566 630 C1566 660 1466 660 1466 698" class="lineTeal"/>
+
+    <!-- Storage and feedback -->
+    <rect x="138" y="1014" width="1518" height="116" rx="30" fill="#FFFFFF" stroke="#BFDBFE" filter="url(#softShadow)"/>
+    <g transform="translate(178 1042)">
+      <rect x="0" y="0" width="286" height="56" rx="19" class="blueSoft"/>
+      <text x="143" y="35" text-anchor="middle" class="label">source_contents</text>
+      <rect x="314" y="0" width="286" height="56" rx="19" class="blueSoft"/>
+      <text x="457" y="35" text-anchor="middle" class="label">media_assets</text>
+      <rect x="628" y="0" width="286" height="56" rx="19" class="blueSoft"/>
+      <text x="771" y="35" text-anchor="middle" class="label">crawl_runs / failures</text>
+      <rect x="942" y="0" width="286" height="56" rx="19" class="tealSoft"/>
+      <text x="1085" y="35" text-anchor="middle" class="label">raw_payload / reports</text>
+      <rect x="1256" y="0" width="220" height="56" rx="19" class="purpleSoft"/>
+      <text x="1366" y="35" text-anchor="middle" class="label">agent_feedback</text>
+    </g>
+    <text x="900" y="1114" text-anchor="middle" class="small">存储可从 SQLite 迁移到 PostgreSQL + pgvector；媒体可同步对象存储和飞书云盘。</text>
+
+    <path d="M1077 630 C1077 970 900 970 900 1012" class="line"/>
+    <path d="M1510 960 C1510 986 1466 986 1466 1012" class="lineTeal"/>
+  </g>
+</svg>

@@ -6,10 +6,14 @@ import json
 import mimetypes
 import os
 import re
+import shlex
+import shutil
 import sqlite3
+import subprocess
 import time
 import uuid
 from dataclasses import replace
+from hashlib import sha256
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -35,6 +39,7 @@ from .providers import (
     ProviderError,
     backend_mcp_call_tool,
     build_provider,
+    http_json,
     int_or_none,
     iso_days_ago,
     media_assets_from_x_payload,
@@ -45,6 +50,7 @@ from .providers import (
 )
 from .platform_mcp_gateway import platform_backend_mcp_status, platform_gateway_enabled, platform_mcp_manager_identity
 from .beeclaw_adapter import FeedgrabUnavailable, feedgrab_health, provider_catalog, read_url, unified_content_to_item
+from .beeclaw_adapter.cli_tools import resolve_cli
 from .beeclaw_adapter.platforms import (
     beeclaw_execution_backend_name,
     beeclaw_provider_name,
@@ -407,6 +413,20 @@ def infer_platform_from_prompt(prompt: str, lower: str, urls: list[str]) -> str:
 
 
 def extract_keyword_query(prompt: str, platform: str) -> str:
+    default_queries = {
+        "xhs": "热门",
+        "xiaohongshu": "热门",
+    }
+    weak_queries = {
+        "",
+        "内容",
+        "的内容",
+        "相关内容",
+        "热门内容",
+        "帖子",
+        "笔记",
+        "热门笔记",
+    }
     patterns = [
         r"关于\s*(.+?)\s*(?:的|相关|热门|内容|帖子|笔记|post|posts)",
         r"(?:关键词|主题|话题)\s*[:：]\s*(.+?)(?:[，。,;；]|$)",
@@ -422,8 +442,11 @@ def extract_keyword_query(prompt: str, platform: str) -> str:
             "",
             query,
         ).strip()
-        if query:
+        query = re.sub(r"^(?:的|相关)\s*", "", query).strip()
+        if query and query not in weak_queries:
             return query
+    if platform in default_queries:
+        return default_queries[platform]
     return platform
 
 
@@ -463,6 +486,7 @@ def search_xhs_mcp_keyword(*, keyword: str, sort: str, note_type: str, max_resul
         },
     )
     payload["_provider_backend"] = f"xiaohongshu-mcp:{tool_name}"
+    payload["_backend_attempts"] = [{"backend": f"xiaohongshu-mcp:{tool_name}", "status": "success"}]
     return payload
 
 
@@ -470,11 +494,19 @@ def search_beeclaw_xhs_keyword(*, keyword: str, sort: str, note_type: str, max_r
     try:
         return search_xhs_mcp_keyword(keyword=keyword, sort=sort, note_type=note_type, max_results=max_results)
     except Exception as xhs_mcp_exc:
+        tool_name = os.getenv("XHS_MCP_SEARCH_TOOL", "search_notes")
+        failed_attempt = {
+            "backend": f"xiaohongshu-mcp:{tool_name}",
+            "status": "failed",
+            "error": getattr(xhs_mcp_exc, "error_type", type(xhs_mcp_exc).__name__),
+            "message": str(xhs_mcp_exc),
+        }
         payload = search_feedgrab_xhs_keyword(keyword=keyword, sort=sort, note_type=note_type, max_results=max_results)
         payload["_provider_backend"] = "feedgrab:xhs_search"
+        payload["_backend_attempts"] = [failed_attempt, {"backend": "feedgrab:xhs_search", "status": "success"}]
         payload["_fallback_from"] = {
             "provider": "xiaohongshu-mcp",
-            "error": type(xhs_mcp_exc).__name__,
+            "error": failed_attempt["error"],
             "message": str(xhs_mcp_exc),
         }
         return payload
@@ -507,6 +539,255 @@ def xhs_note_to_item(note: dict, *, query: str) -> object:
         },
     }
     return unified_content_to_item(content)
+
+
+def _run_json_command(args: list[str], *, timeout: int = 120) -> dict:
+    try:
+        completed = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+    except FileNotFoundError as exc:
+        raise FeedgrabUnavailable(f"command not found: {args[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise FeedgrabUnavailable(f"command timed out: {' '.join(args)}") from exc
+    if completed.returncode != 0:
+        message = (completed.stderr or completed.stdout or "").strip()
+        raise FeedgrabUnavailable(message or f"command failed: {' '.join(args)}")
+    try:
+        payload = json.loads(completed.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise FeedgrabUnavailable(f"command returned non-json output: {' '.join(args)}") from exc
+    if not isinstance(payload, dict):
+        raise FeedgrabUnavailable(f"command returned unsupported json output: {' '.join(args)}")
+    return payload
+
+
+def search_youtube_api_keyword(*, keyword: str, max_results: int) -> dict:
+    api_key = os.getenv("YOUTUBE_API_KEY")
+    if not api_key:
+        raise FeedgrabUnavailable("YOUTUBE_API_KEY is not configured")
+    base_url = "https://www.googleapis.com/youtube/v3"
+    search_payload = http_json(
+        f"{base_url}/search",
+        params={
+            "key": api_key,
+            "q": keyword,
+            "part": "snippet",
+            "order": "date",
+            "type": "video",
+            "maxResults": max(1, min(max_results, 50)),
+        },
+    )
+    video_ids = [
+        item.get("id", {}).get("videoId")
+        for item in search_payload.get("items", []) or []
+        if item.get("id", {}).get("videoId")
+    ]
+    if not video_ids:
+        return {"_provider_backend": "youtube_api:search", "items": []}
+    videos_payload = http_json(
+        f"{base_url}/videos",
+        params={
+            "key": api_key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics,contentDetails",
+        },
+    )
+    items: list[dict] = []
+    for video in videos_payload.get("items", []) or []:
+        snippet = video.get("snippet", {})
+        stats = video.get("statistics", {})
+        thumbnails = snippet.get("thumbnails") or {}
+        thumbnail = (
+            thumbnails.get("maxres")
+            or thumbnails.get("standard")
+            or thumbnails.get("high")
+            or thumbnails.get("medium")
+            or thumbnails.get("default")
+            or {}
+        )
+        video_id = str(video.get("id") or "")
+        if not video_id:
+            continue
+        items.append(
+            {
+                "id": video_id,
+                "title": snippet.get("title"),
+                "content": snippet.get("description"),
+                "url": f"https://www.youtube.com/watch?v={video_id}",
+                "channel": snippet.get("channelTitle"),
+                "views": stats.get("viewCount"),
+                "likes": stats.get("likeCount"),
+                "comments": stats.get("commentCount"),
+                "thumbnail_url": thumbnail.get("url"),
+                "published_at": snippet.get("publishedAt"),
+                "raw": video,
+            }
+        )
+    return {"_provider_backend": "youtube_api:search", "items": items}
+
+
+def search_youtube_ytdlp_keyword(*, keyword: str, max_results: int) -> dict:
+    raw_cmd = os.getenv("BEECLAW_YOUTUBE_SEARCH_CMD") or os.getenv("YOUTUBE_SEARCH_CLI_CMD")
+    if raw_cmd:
+        args = shlex.split(raw_cmd.format(query=keyword, max_results=max_results))
+    else:
+        ytdlp = resolve_cli("yt-dlp")
+        if not ytdlp:
+            raise FeedgrabUnavailable("yt-dlp is not installed")
+        args = [ytdlp, "--dump-single-json", "--skip-download", f"ytsearch{max(1, min(max_results, 50))}:{keyword}"]
+    payload = _run_json_command(args, timeout=180)
+    entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+    if not entries and payload.get("id"):
+        entries = [payload]
+    items: list[dict] = []
+    for entry in entries[:max_results]:
+        if not isinstance(entry, dict):
+            continue
+        video_id = str(entry.get("id") or entry.get("display_id") or "")
+        url = entry.get("webpage_url") or entry.get("url")
+        if video_id and (not url or not str(url).startswith("http")):
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        thumbnails = entry.get("thumbnails") or []
+        thumbnail_url = None
+        for thumbnail in reversed(thumbnails):
+            if isinstance(thumbnail, dict) and thumbnail.get("url"):
+                thumbnail_url = thumbnail.get("url")
+                break
+        items.append(
+            {
+                "id": video_id or sha256(str(url or entry.get("title") or keyword).encode("utf-8")).hexdigest()[:20],
+                "title": entry.get("title"),
+                "content": entry.get("description") or entry.get("title") or "",
+                "url": url or "",
+                "channel": entry.get("channel") or entry.get("uploader"),
+                "views": entry.get("view_count"),
+                "likes": entry.get("like_count"),
+                "comments": entry.get("comment_count"),
+                "thumbnail_url": thumbnail_url,
+                "published_at": entry.get("upload_date") or entry.get("timestamp"),
+                "raw": {key: entry.get(key) for key in ("id", "extractor", "webpage_url", "duration") if entry.get(key) is not None},
+            }
+        )
+    return {"_provider_backend": "yt-dlp:search", "items": items}
+
+
+def search_beeclaw_youtube_keyword(*, keyword: str, max_results: int) -> dict:
+    attempts = []
+    if os.getenv("YOUTUBE_API_KEY"):
+        try:
+            return search_youtube_api_keyword(keyword=keyword, max_results=max_results)
+        except Exception as exc:
+            attempts.append({"backend": "youtube_api:search", "status": "failed", "error": str(exc)})
+    try:
+        payload = search_youtube_ytdlp_keyword(keyword=keyword, max_results=max_results)
+        if attempts:
+            payload["_fallback_from"] = attempts
+        return payload
+    except Exception as exc:
+        attempts.append({"backend": "yt-dlp:search", "status": "failed", "error": str(exc)})
+        raise FeedgrabUnavailable(json.dumps({"message": "YouTube keyword search unavailable", "attempts": attempts}, ensure_ascii=False)) from exc
+
+
+def youtube_video_to_item(video: dict, *, query: str, provider_backend: str) -> ContentItem:
+    video_id = str(video.get("id") or video.get("video_id") or video.get("url") or sha256(json.dumps(video, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:20])
+    url = str(video.get("url") or f"https://www.youtube.com/watch?v={video_id}")
+    thumbnail_url = video.get("thumbnail_url")
+    media_assets = [
+        {
+            "type": "video",
+            "url": url,
+            "thumbnail_url": thumbnail_url,
+        }
+    ]
+    return ContentItem(
+        platform="youtube",
+        original_content_id=video_id,
+        title=video.get("title"),
+        text=video.get("content") or video.get("description") or video.get("title") or "",
+        published_at=video.get("published_at"),
+        url=url,
+        view_count=int_or_none(video.get("views") or video.get("view_count")),
+        like_count=int_or_none(video.get("likes") or video.get("like_count")),
+        comment_count=int_or_none(video.get("comments") or video.get("comment_count")),
+        share_count=None,
+        media_type="video",
+        language=video.get("language"),
+        raw_payload={
+            "source": "beeclaw:youtube",
+            "provider_backend": provider_backend,
+            "search_query": query,
+            "channel": video.get("channel"),
+            "raw": video.get("raw") or {},
+        },
+        media_assets=media_assets,
+    )
+
+
+def search_reddit_public_keyword(*, keyword: str, max_results: int) -> dict:
+    payload = http_json(
+        "https://www.reddit.com/search.json",
+        headers={"User-Agent": "Radar-Beeclaw/1.0"},
+        params={
+            "q": keyword,
+            "sort": "new",
+            "limit": max(1, min(max_results, 100)),
+        },
+    )
+    items: list[dict] = []
+    for child in payload.get("data", {}).get("children", []) or []:
+        data = child.get("data") if isinstance(child, dict) else None
+        if not isinstance(data, dict):
+            continue
+        permalink = data.get("permalink")
+        source_url = f"https://www.reddit.com{permalink}" if permalink and str(permalink).startswith("/") else data.get("url")
+        items.append(
+            {
+                "id": data.get("id") or data.get("name"),
+                "title": data.get("title"),
+                "content": data.get("selftext") or data.get("url") or "",
+                "url": source_url or "",
+                "subreddit": data.get("subreddit"),
+                "score": data.get("score") or data.get("ups"),
+                "comments": data.get("num_comments"),
+                "published_at": data.get("created_utc"),
+                "images": [data.get("thumbnail")] if data.get("thumbnail") and str(data.get("thumbnail")).startswith("http") else [],
+                "raw": {key: data.get(key) for key in ("id", "name", "permalink", "subreddit") if data.get(key) is not None},
+            }
+        )
+    return {"_provider_backend": "reddit_public_search", "items": items}
+
+
+def search_beeclaw_reddit_keyword(*, keyword: str, max_results: int) -> dict:
+    return search_reddit_public_keyword(keyword=keyword, max_results=max_results)
+
+
+def reddit_post_to_item(post: dict, *, query: str, provider_backend: str) -> ContentItem:
+    post_id = str(post.get("id") or post.get("name") or post.get("url") or sha256(json.dumps(post, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:20])
+    url = str(post.get("url") or "")
+    images = [value for value in (post.get("images") or []) if value]
+    videos = [value for value in (post.get("videos") or []) if value]
+    media_assets = [{"type": "image", "url": image} for image in images] + [{"type": "video", "url": video} for video in videos]
+    return ContentItem(
+        platform="reddit",
+        original_content_id=post_id,
+        title=post.get("title"),
+        text=post.get("content") or post.get("selftext") or post.get("title") or "",
+        published_at=post.get("published_at"),
+        url=url,
+        view_count=None,
+        like_count=int_or_none(post.get("score") or post.get("likes") or post.get("upvotes")),
+        comment_count=int_or_none(post.get("comments") or post.get("comment_count") or post.get("num_comments")),
+        share_count=None,
+        media_type=media_type_from_assets("post", media_assets),
+        language=post.get("language"),
+        raw_payload={
+            "source": "beeclaw:reddit",
+            "provider_backend": provider_backend,
+            "search_query": query,
+            "subreddit": post.get("subreddit"),
+            "raw": post.get("raw") or {},
+        },
+        media_assets=media_assets,
+    )
 
 
 def extract_identifier_from_prompt(text: str) -> str | None:
@@ -558,7 +839,11 @@ def parse_chat_prompt(text: str) -> dict:
     elif "chrome" in lower or "浏览器" in prompt or "browser" in lower:
         mode = "chrome-session"
 
-    include_retweets = "转发" in prompt and not any(token in prompt for token in ["不要转发", "排除转发", "不抓转发"])
+    exclude_retweets = any(token in prompt for token in ["不要转发", "排除转发", "不抓转发"])
+    original_only = "原创" in prompt and not any(token in prompt for token in ["非原创", "不限原创"])
+    include_retweets = platform == "x" and not exclude_retweets and not original_only
+    if "转发" in prompt and not exclude_retweets:
+        include_retweets = True
     include_replies = "回复" in prompt and not any(token in prompt for token in ["不要回复", "排除回复", "不抓回复"])
     include_quotes = "引用" in prompt or "quote" in lower
     media_only = any(token in prompt for token in ["只要图片", "只带媒体", "仅带媒体", "图片视频"])
@@ -610,7 +895,11 @@ def non_url_task_requires_source_url(task: dict) -> bool:
         return False
     if platform == "youtube" and source_type == "account":
         return False
+    if platform == "youtube" and source_type == "keyword":
+        return False
     if platform == "xhs" and source_type == "keyword":
+        return False
+    if platform == "reddit" and source_type == "keyword":
         return False
     if source_type in {"keyword", "account"}:
         return True
@@ -763,6 +1052,17 @@ X_MCP_DEFAULT_ALLOWLIST = [
     "getUsage",
 ]
 
+TWITTERAPI_IO_READ_ONLY_ALLOWLIST = [
+    "get_user_last_tweets",
+    "advanced_search",
+    "get_tweets_by_ids",
+    "get_tweet_replies",
+    "get_tweet_quotes",
+    "get_thread_context",
+    "get_user_info",
+    "get_usage",
+]
+
 
 def merged_env_values(*paths: Path) -> dict[str, str]:
     values: dict[str, str] = {}
@@ -801,17 +1101,24 @@ def x_mcp_integration_status(probe: dict[str, object], secret_status: dict[str, 
     return "unavailable"
 
 
+def api_key_backend_status(secret_status: dict[str, bool]) -> str:
+    return "connected" if any(secret_status.values()) else "auth_failed"
+
+
 def mcp_integrations_catalog() -> dict[str, object]:
     env_values = merged_env_values(ROOT / ".env", ROOT / "tools" / "xmcp" / ".env", ROOT / ".external" / "xmcp" / ".env")
     radar_mcp_path = ROOT / "tools" / "radar_mcp_server.py"
     radar_base_url = env_values.get("RADAR_BASE_URL") or "http://radar-api:8780"
     gateway_x_status = platform_backend_mcp_status("x-mcp")
     gateway_xhs_status = platform_backend_mcp_status("xiaohongshu-mcp")
+    gateway_twitterapi_status = platform_backend_mcp_status("twitterapi-io")
     use_platform_gateway = bool(gateway_x_status.get("enabled"))
     xmcp_url = env_values.get("X_MCP_SERVER_URL") or env_values.get("XMCP_SERVER_URL") or "http://x-mcp:8000/mcp"
     xhs_mcp_url = env_values.get("XHS_MCP_SERVER_URL") or env_values.get("XIAOHONGSHU_MCP_SERVER_URL") or "http://xhs-mcp:18060/mcp"
+    twitterapi_io_base_url = env_values.get("TWITTERAPI_IO_BASE_URL") or "https://api.twitterapi.io"
     allowlist_value = env_values.get("X_API_TOOL_ALLOWLIST") or ",".join(X_MCP_DEFAULT_ALLOWLIST)
     xhs_allowlist_value = env_values.get("XHS_MCP_TOOL_ALLOWLIST") or "search_notes,get_note,get_user_notes"
+    twitterapi_allowlist_value = env_values.get("TWITTERAPI_IO_TOOL_ALLOWLIST") or ",".join(TWITTERAPI_IO_READ_ONLY_ALLOWLIST)
     x_secret_status = {
         "X_BEARER_TOKEN": bool(env_values.get("X_BEARER_TOKEN")),
         "X_OAUTH_CONSUMER_KEY": bool(env_values.get("X_OAUTH_CONSUMER_KEY") or env_values.get("X_API_KEY")),
@@ -821,10 +1128,14 @@ def mcp_integrations_catalog() -> dict[str, object]:
         "XHS_MCP_TOKEN": bool(env_values.get("XHS_MCP_TOKEN") or env_values.get("XIAOHONGSHU_MCP_TOKEN")),
         "XHS_COOKIE": bool(env_values.get("XHS_COOKIE") or env_values.get("XIAOHONGSHU_COOKIE")),
     }
+    twitterapi_secret_status = {
+        "TWITTERAPI_IO_KEY": bool(env_values.get("TWITTERAPI_IO_KEY")),
+    }
     xmcp_probe = probe_mcp_endpoint(xmcp_url)
     xhs_probe = probe_mcp_endpoint(xhs_mcp_url)
     x_status = str(gateway_x_status.get("status")) if use_platform_gateway else x_mcp_integration_status(xmcp_probe, x_secret_status)
     xhs_status = str(gateway_xhs_status.get("status")) if use_platform_gateway else ("connected" if xhs_probe.get("reachable") else "unavailable")
+    twitterapi_status = str(gateway_twitterapi_status.get("status")) if use_platform_gateway else api_key_backend_status(twitterapi_secret_status)
     manager_identity = platform_mcp_manager_identity()
     manager = {
         "name": manager_identity["name"],
@@ -906,6 +1217,28 @@ def mcp_integrations_catalog() -> dict[str, object]:
             "usedBy": ["Radar / Beeclaw XHS provider"],
             "gateway": gateway_xhs_status,
             "notes": "小红书 MCP 由平台 MCP Manager 统一管理；Radar 通过 beeclaw:xhs provider 调用它完成关键词/笔记采集。",
+        },
+        {
+            "name": "twitterapi-io",
+            "displayName": "TwitterAPI.io",
+            "type": "backend",
+            "role": "Third-party X data backend connector",
+            "status": twitterapi_status,
+            "managedBy": manager_identity["managedBy"],
+            "invocationMode": "platform_gateway" if use_platform_gateway else "direct_rest_api",
+            "defaultAgentBinding": False,
+            "bindToAiEmployeeByDefault": False,
+            "exposesRawPlatformTools": False,
+            "endpoint": "platform://mcp/twitterapi-io" if use_platform_gateway else twitterapi_io_base_url,
+            "reachable": bool(gateway_twitterapi_status.get("urlConfigured")) if use_platform_gateway else bool(twitterapi_secret_status["TWITTERAPI_IO_KEY"]),
+            "message": manager_identity["message"] if use_platform_gateway else ("api_key_configured" if twitterapi_secret_status["TWITTERAPI_IO_KEY"] else "missing_TWITTERAPI_IO_KEY"),
+            "toolAllowlist": [item.strip() for item in twitterapi_allowlist_value.split(",") if item.strip()],
+            "secretStatus": twitterapi_secret_status,
+            "secretValuesExposed": False,
+            "safeReadOnly": True,
+            "usedBy": ["Radar / Beeclaw X provider"],
+            "gateway": gateway_twitterapi_status,
+            "notes": "TwitterAPI.io 是 X 第三方只读增强 backend。生产密钥由平台 Secret/MCP Manager 管理；Radar 只读取 TWITTERAPI_IO_KEY 状态，不暴露明文。",
         },
     ]
     return {"manager": manager, "items": integrations}
@@ -1772,6 +2105,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             },
             "tokens": {
                 "x": bool(__import__("os").getenv("X_BEARER_TOKEN")),
+                "twitterapiIo": bool(__import__("os").getenv("TWITTERAPI_IO_KEY")),
                 "youtube": bool(__import__("os").getenv("YOUTUBE_API_KEY")),
                 "linkedin": bool(__import__("os").getenv("LINKEDIN_ACCESS_TOKEN")),
                 "instagram": bool(__import__("os").getenv("INSTAGRAM_ACCESS_TOKEN")),
@@ -1805,6 +2139,7 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             "xBearerToken": bool(os.getenv("X_BEARER_TOKEN")),
             "xApiKey": bool(os.getenv("X_API_KEY")),
             "xApiSecret": bool(os.getenv("X_API_SECRET")),
+            "twitterapiIo": bool(os.getenv("TWITTERAPI_IO_KEY")),
             "youtube": bool(os.getenv("YOUTUBE_API_KEY")),
             "linkedin": bool(os.getenv("LINKEDIN_ACCESS_TOKEN")),
             "instagram": bool(os.getenv("INSTAGRAM_ACCESS_TOKEN")),
@@ -1960,16 +2295,17 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "id": "deep_platform_providers",
                 "title": "小红书、YouTube、Reddit 等深度 provider",
                 "status": "partial",
-                "projectSide": "provider_framework_ready",
+                "projectSide": "keyword_and_url_collection_ready",
                 "externalDependency": "部分平台需要 MCP、CLI、API 凭证、登录态或平台级采集策略。",
                 "evidence": {
                     "registeredPlatforms": deep_provider_platforms,
                     "executableBackends": executable_backends,
                     "xhsMcpStatus": xhs_mcp.get("status"),
+                    "implementedKeywordPlatforms": ["x", "xhs", "youtube", "reddit"],
                 },
                 "nextActions": [
-                    "按平台补齐账号级和关键词级 provider。",
-                    "优先验收 YouTube、RSS/Web、小红书、微信公众号、B站/抖音/微博、Reddit/Telegram。",
+                    "按平台继续补齐账号级、评论级和详情级 provider。",
+                    "优先验收 YouTube API/yt-dlp、小红书 MCP/CLI、Reddit public search/API。",
                     "每个平台记录 provider=beeclaw:<platform> 和 execution_backend。",
                 ],
             },
@@ -2978,14 +3314,16 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             )
         media_stats = {"downloaded": 0, "failed": 0}
         try:
-            content = read_url(url)
+            requested_platform = normalize_feedgrab_platform(body.get("platform")) or infer_platform_from_url(url) or "web"
+            backend_hint = (
+                body.get("backend")
+                or body.get("backendHint")
+                or body.get("executionBackend")
+                or body.get("execution_backend")
+            )
+            content = read_url(url, platform=requested_platform, backend_hint=backend_hint)
             item = unified_content_to_item(content)
-            requested_platform = (
-                normalize_feedgrab_platform(body.get("platform"))
-                or infer_platform_from_url(url)
-                or normalize_feedgrab_platform(item.platform)
-                or item.platform
-            ).strip().lower()
+            requested_platform = (requested_platform or normalize_feedgrab_platform(item.platform) or item.platform).strip().lower()
             if requested_platform not in {"", "web"} and item.platform != requested_platform:
                 item = replace(
                     item,
@@ -3007,6 +3345,9 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                     },
                 )
             result_items = rss_feed_entry_items(content, item, provider_route=provider_route or "beeclaw:rss") or [item]
+            max_results = parse_int(str(body.get("maxResults") or body.get("limit") or ""), None)
+            if max_results is not None:
+                result_items = result_items[: max(0, max_results)]
             category = (body.get("category") or "Beeclaw URL").strip() or "Beeclaw URL"
             source_name = None
             if hasattr(content, "to_dict"):
@@ -3195,6 +3536,156 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 }
             self.finish_run(conn, run_id, report)
             return self.api_run_detail(run_id)
+        if platform == "youtube":
+            try:
+                max_results = parse_int(str(body.get("maxResults") or ""), 20) or 20
+                result_payload = search_beeclaw_youtube_keyword(keyword=query, max_results=max_results)
+                provider_backend = result_payload.get("_provider_backend") or "yt-dlp:search"
+                videos = result_payload.get("items") or result_payload.get("videos") or []
+                items = [
+                    youtube_video_to_item(video, query=query, provider_backend=provider_backend)
+                    for video in videos
+                    if isinstance(video, dict)
+                ]
+                if bool_body(body, "mediaOnly", False):
+                    items = [item for item in items if item.media_assets]
+                account = self.upsert_feedgrab_keyword_account(conn, platform="youtube", query=query, category=category)
+                fetch_result = FetchResult(account_id=int(account["id"]), platform="youtube", items=items)
+                if bool_body(body, "downloadMedia", False) or bool_body(body, "downloadImages", False) or bool_body(body, "downloadVideos", False):
+                    media_stats = download_fetch_result_media(fetch_result, account=dict(account), media_root=Path(body.get("mediaDir") or DEFAULT_MEDIA_DIR))
+                content_ids = save_fetch_result_with_ids(conn, fetch_result)
+                link_run_contents(conn, run_id, content_ids)
+                saved = len(content_ids)
+                report = {
+                    "accounts": 1,
+                    "successes": 1,
+                    "saved": saved,
+                    "failures": 0,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [
+                        {
+                            "query": query,
+                            "provider": "beeclaw:youtube",
+                            "execution_backend": beeclaw_execution_backend_name(provider_backend),
+                            "saved": saved,
+                            "contentIds": content_ids,
+                        }
+                    ],
+                }
+            except FeedgrabUnavailable as exc:
+                log_failure(
+                    conn,
+                    source_account_id=None,
+                    platform=platform,
+                    error_type="youtube_keyword_unavailable",
+                    error_message=str(exc),
+                    raw_context={"query": query, "run_id": run_id, "source": "beeclaw-youtube-keyword"},
+                )
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [{"query": query, "provider": "beeclaw:youtube", "error": "youtube_keyword_unavailable", "message": str(exc)}],
+                }
+            except Exception as exc:
+                log_failure(
+                    conn,
+                    source_account_id=None,
+                    platform=platform,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    raw_context={"query": query, "run_id": run_id, "source": "beeclaw-youtube-keyword"},
+                )
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [{"query": query, "provider": "beeclaw:youtube", "error": type(exc).__name__, "message": str(exc)}],
+                }
+            self.finish_run(conn, run_id, report)
+            return self.api_run_detail(run_id)
+        if platform == "reddit":
+            try:
+                max_results = parse_int(str(body.get("maxResults") or ""), 20) or 20
+                result_payload = search_beeclaw_reddit_keyword(keyword=query, max_results=max_results)
+                provider_backend = result_payload.get("_provider_backend") or "reddit_public_search"
+                posts = result_payload.get("items") or result_payload.get("posts") or []
+                items = [
+                    reddit_post_to_item(post, query=query, provider_backend=provider_backend)
+                    for post in posts
+                    if isinstance(post, dict)
+                ]
+                if bool_body(body, "mediaOnly", False):
+                    items = [item for item in items if item.media_assets]
+                account = self.upsert_feedgrab_keyword_account(conn, platform="reddit", query=query, category=category)
+                fetch_result = FetchResult(account_id=int(account["id"]), platform="reddit", items=items)
+                if bool_body(body, "downloadMedia", False) or bool_body(body, "downloadImages", False) or bool_body(body, "downloadVideos", False):
+                    media_stats = download_fetch_result_media(fetch_result, account=dict(account), media_root=Path(body.get("mediaDir") or DEFAULT_MEDIA_DIR))
+                content_ids = save_fetch_result_with_ids(conn, fetch_result)
+                link_run_contents(conn, run_id, content_ids)
+                saved = len(content_ids)
+                report = {
+                    "accounts": 1,
+                    "successes": 1,
+                    "saved": saved,
+                    "failures": 0,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [
+                        {
+                            "query": query,
+                            "provider": "beeclaw:reddit",
+                            "execution_backend": beeclaw_execution_backend_name(provider_backend),
+                            "saved": saved,
+                            "contentIds": content_ids,
+                        }
+                    ],
+                }
+            except FeedgrabUnavailable as exc:
+                log_failure(
+                    conn,
+                    source_account_id=None,
+                    platform=platform,
+                    error_type="reddit_keyword_unavailable",
+                    error_message=str(exc),
+                    raw_context={"query": query, "run_id": run_id, "source": "beeclaw-reddit-keyword"},
+                )
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [{"query": query, "provider": "beeclaw:reddit", "error": "reddit_keyword_unavailable", "message": str(exc)}],
+                }
+            except Exception as exc:
+                log_failure(
+                    conn,
+                    source_account_id=None,
+                    platform=platform,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                    raw_context={"query": query, "run_id": run_id, "source": "beeclaw-reddit-keyword"},
+                )
+                report = {
+                    "accounts": 1,
+                    "successes": 0,
+                    "saved": 0,
+                    "failures": 1,
+                    "media": media_stats,
+                    "feishuWritten": 0,
+                    "details": [{"query": query, "provider": "beeclaw:reddit", "error": type(exc).__name__, "message": str(exc)}],
+                }
+            self.finish_run(conn, run_id, report)
+            return self.api_run_detail(run_id)
         if platform != "xhs":
             report = {
                 "accounts": 1,
@@ -3236,20 +3727,19 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 max_results=max_results,
             )
             provider_backend = result_payload.get("_provider_backend") or "feedgrab:xhs_search"
+            backend_attempts = result_payload.get("_backend_attempts") if isinstance(result_payload.get("_backend_attempts"), list) else []
             notes = result_payload.get("notes") or result_payload.get("items") or []
             items = []
             for note in notes:
                 item = xhs_note_to_item(note, query=query)
-                items.append(
-                    replace(
-                        item,
-                        raw_payload={
-                            **item.raw_payload,
-                            "source": "beeclaw:xhs",
-                            "provider_backend": provider_backend,
-                        },
-                    )
-                )
+                raw_payload = {
+                    **item.raw_payload,
+                    "source": "beeclaw:xhs",
+                    "provider_backend": provider_backend,
+                }
+                if backend_attempts:
+                    raw_payload["backend_attempts"] = backend_attempts
+                items.append(replace(item, raw_payload=raw_payload))
             if bool_body(body, "mediaOnly", False):
                 items = [item for item in items if item.media_assets]
             account = self.upsert_feedgrab_keyword_account(conn, platform="xhs", query=query, category=category)
@@ -3267,13 +3757,14 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
                 "media": media_stats,
                 "feishuWritten": 0,
                 "details": [
-                    {
-                        "query": query,
-                        "provider": "beeclaw:xhs",
-                        "execution_backend": beeclaw_execution_backend_name(provider_backend),
-                        "saved": saved,
-                        "contentIds": content_ids,
-                    }
+                        {
+                            "query": query,
+                            "provider": "beeclaw:xhs",
+                            "execution_backend": beeclaw_execution_backend_name(provider_backend),
+                            "backend_attempts": backend_attempts,
+                            "saved": saved,
+                            "contentIds": content_ids,
+                        }
                 ],
             }
         except FeedgrabUnavailable as exc:

@@ -1,9 +1,12 @@
 import json
+import os
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from crawler.beeclaw_adapter import client as client_module
+from crawler.beeclaw_adapter.cli_tools import PROJECT_BIN_DIR, resolve_cli
 from crawler.beeclaw_adapter.health import provider_catalog
 from crawler.beeclaw_adapter import health as health_module
 from crawler.beeclaw_adapter.mapper import unified_content_to_item
@@ -89,6 +92,91 @@ class BeeclawAdapterTests(unittest.TestCase):
         self.assertEqual(content["source_name"], "Jina Reader")
         self.assertEqual(content["title"], "Example Title")
         self.assertEqual(content["extra"]["provider_backend"], "Jina Reader")
+
+    @patch.object(client_module, "_command_json")
+    @patch.object(client_module, "resolve_cli", return_value="/usr/bin/agent-browser")
+    def test_read_url_uses_agent_browser_for_web_urls_when_requested(self, _resolve_cli, command_json):
+        command_json.return_value = {
+            "id": "agent-browser-page",
+            "title": "Agent Browser Page",
+            "content": "Rendered page body.",
+            "url": "https://example.com/article",
+            "images": ["https://example.com/image.png"],
+            "videos": ["https://example.com/video.mp4"],
+        }
+
+        content = client_module.read_url("https://example.com/article", platform="web", backend_hint="agent-browser")
+
+        self.assertEqual(content["source_type"], "web")
+        self.assertEqual(content["source_name"], "agent-browser")
+        self.assertEqual(content["title"], "Agent Browser Page")
+        self.assertEqual(content["content"], "Rendered page body.")
+        self.assertEqual(content["extra"]["images"], ["https://example.com/image.png"])
+        self.assertEqual(content["extra"]["videos"], ["https://example.com/video.mp4"])
+        self.assertEqual(content["extra"]["provider_backend"], "agent-browser")
+        self.assertEqual(content["extra"]["backend_attempts"], [{"backend": "agent-browser", "status": "success"}])
+
+    def test_read_url_auto_rotates_web_backends_until_agent_browser_succeeds(self):
+        def fake_agent_browser(url):
+            return {
+                "source_type": "web",
+                "source_name": "agent-browser",
+                "title": "Rendered Page",
+                "content": "Rendered body.",
+                "url": url,
+                "id": "rendered",
+                "extra": {
+                    "provider_backend": "agent-browser",
+                    "backend_attempts": [{"backend": "agent-browser", "status": "success"}],
+                },
+            }
+
+        with (
+            patch.object(client_module, "_read_with_jina", side_effect=client_module.FeedgrabUnavailable("jina failed")),
+            patch.object(client_module, "_read_with_agent_browser", side_effect=fake_agent_browser),
+        ):
+            content = client_module.read_url("https://example.com/app", platform="web")
+
+        self.assertEqual(content["source_name"], "agent-browser")
+        self.assertEqual(
+            content["extra"]["backend_attempts"],
+            [
+                {"backend": "Jina Reader", "status": "failed", "error": "jina failed"},
+                {"backend": "agent-browser", "status": "success"},
+            ],
+        )
+
+    def test_read_url_auto_rotates_platform_backend_then_generic_backends(self):
+        def fake_agent_browser(url):
+            return {
+                "source_type": "web",
+                "source_name": "agent-browser",
+                "title": "Rendered XHS Page",
+                "content": "Rendered XHS body.",
+                "url": url,
+                "id": "xhs-rendered",
+                "extra": {
+                    "provider_backend": "agent-browser",
+                    "backend_attempts": [{"backend": "agent-browser", "status": "success"}],
+                },
+            }
+
+        with (
+            patch.object(client_module, "_read_with_xhs_cli", side_effect=client_module.FeedgrabUnavailable("xhs cli missing")),
+            patch.object(client_module, "_read_with_jina", side_effect=client_module.FeedgrabUnavailable("jina failed")),
+            patch.object(client_module, "_read_with_agent_browser", side_effect=fake_agent_browser),
+        ):
+            content = client_module.read_url("https://www.xiaohongshu.com/explore/abc", platform="xhs")
+
+        self.assertEqual(content["source_name"], "agent-browser")
+        self.assertEqual(
+            content["extra"]["backend_attempts"],
+            [
+                {"backend": "xhs-cli", "status": "failed", "error": "xhs cli missing"},
+                {"backend": "Jina Reader", "status": "failed", "error": "jina failed"},
+                {"backend": "agent-browser", "status": "success"},
+            ],
+        )
 
     @patch.object(client_module.subprocess, "run")
     @patch.object(client_module.shutil, "which")
@@ -275,8 +363,7 @@ class BeeclawAdapterTests(unittest.TestCase):
         self.assertEqual(content["extra"]["items"][0]["title"], "Atom Entry")
         self.assertEqual(content["extra"]["items"][0]["url"], "https://example.com/atom/1")
 
-    @patch.object(client_module.shutil, "which", return_value=None)
-    def test_read_url_records_fallback_attempts_when_specialized_backend_missing(self, _which):
+    def test_read_url_records_fallback_attempts_when_all_auto_backends_fail(self):
         async def fake_universal_reader(url):
             return {
                 "source_type": "reddit",
@@ -288,13 +375,24 @@ class BeeclawAdapterTests(unittest.TestCase):
                 "extra": {},
             }
 
-        with patch.object(client_module, "_read_url_async", side_effect=fake_universal_reader):
+        with (
+            patch.object(client_module, "_read_with_rdt_cli", side_effect=client_module.FeedgrabUnavailable("rdt missing")),
+            patch.object(client_module, "_read_with_jina", side_effect=client_module.FeedgrabUnavailable("jina failed")),
+            patch.object(client_module, "_read_with_agent_browser", side_effect=client_module.FeedgrabUnavailable("browser failed")),
+            patch.object(client_module, "_read_url_async", side_effect=fake_universal_reader),
+        ):
             content = client_module.read_url("https://www.reddit.com/r/artificial/comments/abcde/ai_discussion/")
 
         self.assertEqual(content["extra"]["provider_backend"], "beeclaw:universal_reader")
-        self.assertEqual(content["extra"]["backend_attempts"][0]["backend"], "rdt-cli")
-        self.assertEqual(content["extra"]["backend_attempts"][0]["status"], "failed")
-        self.assertEqual(content["extra"]["backend_attempts"][1], {"backend": "beeclaw:universal_reader", "status": "success"})
+        self.assertEqual(
+            content["extra"]["backend_attempts"],
+            [
+                {"backend": "rdt-cli", "status": "failed", "error": "rdt missing"},
+                {"backend": "Jina Reader", "status": "failed", "error": "jina failed"},
+                {"backend": "agent-browser", "status": "failed", "error": "browser failed"},
+                {"backend": "beeclaw:universal_reader", "status": "success"},
+            ],
+        )
 
     def test_read_url_falls_back_when_specialized_backend_raises_unexpected_error(self):
         async def fake_universal_reader(url):
@@ -316,7 +414,8 @@ class BeeclawAdapterTests(unittest.TestCase):
 
         self.assertEqual(content["extra"]["provider_backend"], "beeclaw:universal_reader")
         self.assertEqual(content["extra"]["backend_attempts"][0], {"backend": "Jina Reader", "status": "failed", "error": "jina disconnected"})
-        self.assertEqual(content["extra"]["backend_attempts"][1], {"backend": "beeclaw:universal_reader", "status": "success"})
+        self.assertEqual(content["extra"]["backend_attempts"][1], {"backend": "agent-browser", "status": "failed", "error": "jina disconnected"})
+        self.assertEqual(content["extra"]["backend_attempts"][2], {"backend": "beeclaw:universal_reader", "status": "success"})
 
     def test_provider_catalog_includes_beeclaw_xmcp(self):
         providers = provider_catalog()
@@ -324,8 +423,18 @@ class BeeclawAdapterTests(unittest.TestCase):
         x_provider = next(item for item in providers if item["provider"] == "beeclaw:x")
         self.assertEqual(
             x_provider["backends"],
-            ["x_mcp", "x_api", "x_rss", "twitter-cli", "browser_session"],
+            [
+                "x_mcp",
+                "x_api",
+                "twitterapi_io",
+                "x_rss",
+                "twitter-cli",
+                "cloud_browser_session",
+                "headless_browser_session",
+                "local_browser_session",
+            ],
         )
+        self.assertTrue(any(item["provider"] == "beeclaw:x_twitterapi_io" for item in providers))
 
     def test_provider_catalog_lists_beeclaw_url_platforms(self):
         providers = provider_catalog()
@@ -362,24 +471,61 @@ class BeeclawAdapterTests(unittest.TestCase):
 
         self.assertEqual(providers["beeclaw:youtube"]["backends"], ["yt-dlp", "youtube_api", "rss"])
         self.assertEqual(providers["beeclaw:xhs"]["backends"], ["xiaohongshu-mcp", "xhs-cli", "universal_reader"])
-        self.assertEqual(providers["beeclaw:reddit"]["backends"], ["rdt-cli", "reddit_api", "universal_reader"])
+        self.assertEqual(providers["beeclaw:reddit"]["backends"], ["reddit_public_search", "rdt-cli", "reddit_api", "universal_reader"])
         self.assertEqual(providers["beeclaw:github"]["backends"], ["gh", "github_api", "universal_reader"])
-        self.assertEqual(providers["beeclaw:web"]["backends"], ["Jina Reader", "universal_reader"])
+        self.assertEqual(providers["beeclaw:web"]["backends"], ["Jina Reader", "agent-browser", "universal_reader"])
         self.assertEqual(providers["beeclaw:rss"]["backends"], ["rss_parser", "universal_reader"])
 
     @patch.object(health_module, "_http_probe", return_value={"reachable": True, "message": "ok"})
     @patch.object(health_module, "_installed_version", return_value="1.0.0")
+    @patch.object(health_module, "cli_health")
     @patch.object(health_module.shutil, "which")
-    def test_feedgrab_health_reports_optional_backend_tools(self, which, _version, _probe):
-        which.side_effect = lambda name: f"/usr/bin/{name}" if name in {"yt-dlp", "gh"} else None
+    def test_feedgrab_health_reports_optional_backend_tools(self, which, cli_health, _version, _probe):
+        which.side_effect = lambda name: "/usr/bin/twitter" if name == "twitter" else None
+        cli_health.side_effect = lambda name: {
+            "installed": name in {"yt-dlp", "gh"},
+            "path": f"/usr/bin/{name}" if name in {"yt-dlp", "gh"} else None,
+            "source": "system" if name in {"yt-dlp", "gh"} else None,
+        }
 
-        health = health_module.feedgrab_health()
+        with patch.dict(os.environ, {"TWITTERAPI_IO_KEY": ""}, clear=False):
+            health = health_module.feedgrab_health()
 
         self.assertTrue(health["backend_health"]["yt-dlp"]["installed"])
         self.assertTrue(health["backend_health"]["gh"]["installed"])
         self.assertTrue(health["backend_health"]["rss_parser"]["installed"])
+        self.assertFalse(health["backend_health"]["twitterapi_io"]["configured"])
         self.assertFalse(health["backend_health"]["xhs-cli"]["installed"])
         self.assertFalse(health["backend_health"]["rdt-cli"]["installed"])
+        self.assertFalse(health["backend_health"]["agent-browser"]["installed"])
+
+    def test_project_bundled_cli_tools_are_resolved(self):
+        with patch("crawler.beeclaw_adapter.cli_tools.shutil.which", return_value=None):
+            self.assertEqual(Path(resolve_cli("xhs-cli")).parent, PROJECT_BIN_DIR)
+            self.assertEqual(Path(resolve_cli("rdt-cli")).parent, PROJECT_BIN_DIR)
+            self.assertEqual(Path(resolve_cli("twitter-cli")).parent, PROJECT_BIN_DIR)
+            self.assertEqual(Path(resolve_cli("agent-browser")).parent, PROJECT_BIN_DIR)
+
+    def test_feedgrab_health_reports_x_browser_session_configuration(self):
+        with patch.object(health_module, "_http_probe", return_value={"reachable": True, "message": "ok"}):
+            with patch.object(health_module, "_installed_version", return_value="1.0.0"):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "BEECLAW_X_BROWSER_SESSION_MODE": "cloud",
+                        "BEECLAW_X_BROWSER_ENDPOINT": "https://browser.example.test/extract",
+                        "BEECLAW_X_BROWSER_API_KEY": "secret-token",
+                    },
+                    clear=False,
+                ):
+                    health = health_module.feedgrab_health()
+
+        browser = health["backend_health"]["x_browser_session"]
+        self.assertTrue(browser["cloud"]["configured"])
+        self.assertEqual(browser["mode"], "cloud")
+        self.assertTrue(browser["secretStatus"]["BEECLAW_X_BROWSER_API_KEY"])
+        self.assertFalse(browser["secretValuesExposed"])
+        self.assertNotIn("secret-token", json.dumps(browser))
 
 
 if __name__ == "__main__":
