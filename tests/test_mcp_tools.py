@@ -37,6 +37,33 @@ def import_mcp_server_with_fake_mcp():
 
 
 class RadarMcpToolsTests(unittest.TestCase):
+    def test_request_adds_radar_api_token_when_configured(self):
+        server = import_mcp_server_with_fake_mcp()
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self):
+                return b'{"ok": true}'
+
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["authorization"] = request.get_header("Authorization")
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch.dict(server.os.environ, {"RADAR_API_TOKEN": "secret-radar-token"}, clear=False):
+            with patch.object(server.urllib.request, "urlopen", side_effect=fake_urlopen):
+                result = server._request("GET", "/api/summary")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(captured["authorization"], "Bearer secret-radar-token")
+
     def test_radar_agent_collect_posts_instruction_to_chat_api(self):
         server = import_mcp_server_with_fake_mcp()
         with patch.object(server, "_request") as request:

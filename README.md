@@ -144,11 +144,15 @@ Run the real platform smoke matrix through Radar API:
 ./tools/beeclaw_platform_smoke.py --platforms all --types url,account,keyword
 
 # Execute a safe URL subset.
-./tools/beeclaw_platform_smoke.py --execute --platforms web,rss,github,youtube,reddit --types url --limit 2
+./tools/beeclaw_platform_smoke.py --execute --platforms web,rss,github,youtube,reddit --types url --limit 2 --report-file reports/beeclaw-smoke.json
 
 # Test web URL capture through the agent-browser backend.
 ./tools/beeclaw_platform_smoke.py --execute --platforms web --types url --backend agent-browser
 ```
+
+When `RADAR_API_TOKEN` is configured, the smoke script automatically sends it
+as `Authorization: Bearer <token>` and records only whether auth was configured,
+not the secret value.
 
 For platforms without public default samples, provide real test inputs through
 environment variables such as `BEECLAW_SMOKE_XHS_URL`,
@@ -346,6 +350,7 @@ Radar exposes a bounded pressure-test entry for real X MCP / credits validation:
 
 ```bash
 curl --noproxy '*' -X POST http://127.0.0.1:8780/api/providers/xmcp/pressure-test \
+  -H 'Authorization: Bearer <RADAR_API_TOKEN>' \
   -H 'Content-Type: application/json' \
   -d '{"handles":["@OpenAI","@Anthropic"],"maxAccounts":2,"maxResults":3,"execute":false}'
 ```

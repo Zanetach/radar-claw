@@ -350,7 +350,12 @@ RADAR_HOST=0.0.0.0
 RADAR_PORT=8780
 RADAR_DB_PATH=/data/radar/radar.sqlite3
 RADAR_MEDIA_DIR=/data/radar/media
+RADAR_API_TOKEN=<platform-secret>
 ```
+
+`RADAR_API_TOKEN` 是生产环境必配项。配置后，所有 `/api/*` 请求必须携带
+`Authorization: Bearer <token>` 或 `X-Radar-API-Token`。Radar MCP、Beeclaw
+CLI 和 smoke 工具会从环境变量读取该值并自动加到请求头中。
 
 启动：
 
@@ -361,8 +366,8 @@ RADAR_MEDIA_DIR=/data/radar/media
 健康检查：
 
 ```bash
-curl http://<radar-api>:8780/api/summary
-curl http://<radar-api>:8780/api/production-readiness
+curl -H "Authorization: Bearer ${RADAR_API_TOKEN}" http://<radar-api>:8780/api/summary
+curl -H "Authorization: Bearer ${RADAR_API_TOKEN}" http://<radar-api>:8780/api/production-readiness
 ```
 
 ### 4.2 Radar MCP
@@ -378,6 +383,7 @@ args:
   - /app/tools/radar_mcp_server.py
 env:
   RADAR_BASE_URL: http://radar-api:8780
+  RADAR_API_TOKEN: <platform-secret>
 ```
 
 AI 员工默认绑定 Radar MCP。

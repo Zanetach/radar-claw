@@ -3,6 +3,8 @@ import json
 import os
 import sqlite3
 import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 from http.server import ThreadingHTTPServer
 from tempfile import TemporaryDirectory
@@ -168,11 +170,12 @@ class WebChatTests(unittest.TestCase):
             with patch.dict(os.environ, {"X_BEARER_TOKEN": "secret-token"}, clear=False):
                 result = handler.api_production_readiness({})
 
-        self.assertEqual(result["summary"]["totalChecks"], 6)
+        self.assertEqual(result["summary"]["totalChecks"], 7)
         check_ids = {item["id"] for item in result["checks"]}
         self.assertEqual(
             check_ids,
             {
+                "api_service_auth",
                 "platform_mcp_gateway",
                 "x_mcp_production_pressure",
                 "deep_platform_providers",
@@ -182,10 +185,60 @@ class WebChatTests(unittest.TestCase):
             },
         )
         checks = {item["id"]: item for item in result["checks"]}
+        self.assertEqual(checks["api_service_auth"]["status"], "requires_api_token")
         self.assertEqual(checks["large_task_queue_worker"]["projectSide"], "implemented")
         self.assertEqual(checks["agent_feedback_standardization"]["status"], "implemented")
         self.assertIn("radar_xmcp_pressure_test", " ".join(checks["x_mcp_production_pressure"]["nextActions"]))
         self.assertNotIn("secret-token", json.dumps(result))
+
+    @patch("crawler.web.probe_mcp_endpoint")
+    def test_production_readiness_reports_configured_api_auth_without_exposing_token(self, probe_mcp_endpoint):
+        probe_mcp_endpoint.return_value = {"url": "http://x-mcp:8000/mcp", "reachable": True, "message": "HTTP 200"}
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "radar.db"
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            init_db(conn)
+            handler = object.__new__(RadarAdminHandler)
+            handler.db_path = db_path
+
+            with patch.dict(os.environ, {"RADAR_API_TOKEN": "secret-radar-token"}, clear=False):
+                result = handler.api_production_readiness({})
+
+        checks = {item["id"]: item for item in result["checks"]}
+        self.assertEqual(checks["api_service_auth"]["status"], "implemented")
+        self.assertTrue(checks["api_service_auth"]["evidence"]["apiTokenConfigured"])
+        self.assertNotIn("secret-radar-token", json.dumps(result))
+
+    def test_api_requires_bearer_token_when_configured(self):
+        with TemporaryDirectory() as tmp, patch.dict(os.environ, {"RADAR_API_TOKEN": "secret-radar-token"}, clear=False):
+            db_path = Path(tmp) / "radar.db"
+
+            class TestHandler(RadarAdminHandler):
+                pass
+
+            TestHandler.db_path = db_path
+            server = ThreadingHTTPServer(("127.0.0.1", 0), TestHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                request = urllib.request.Request(f"http://127.0.0.1:{server.server_port}/api/summary")
+                with self.assertRaises(urllib.error.HTTPError) as ctx:
+                    urlopen(request, timeout=5)
+                self.assertEqual(ctx.exception.code, 401)
+
+                authed = urllib.request.Request(
+                    f"http://127.0.0.1:{server.server_port}/api/summary",
+                    headers={"Authorization": "Bearer secret-radar-token"},
+                )
+                with urlopen(authed, timeout=5) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=5)
+
+        self.assertIn("accounts", payload)
 
     def test_root_is_api_metadata_not_web_ui(self):
         with TemporaryDirectory() as tmp:

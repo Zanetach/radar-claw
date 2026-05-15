@@ -8,6 +8,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -90,10 +91,14 @@ def task_payload(case: SmokeCase, *, limit: int, queue: bool, backend: str | Non
 
 def request_json(base_url: str, path: str, payload: dict[str, Any], *, timeout: int = 180) -> dict[str, Any]:
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    api_token = os.getenv("RADAR_API_TOKEN", "").strip()
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}{path}",
         data=data,
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers=headers,
         method="POST",
     )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -160,6 +165,33 @@ def render_text(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def summarize_results(results: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {
+        "total": len(results),
+        "dryRun": 0,
+        "missingInput": 0,
+        "success": 0,
+        "failed": 0,
+        "httpError": 0,
+        "error": 0,
+    }
+    for item in results:
+        status = item.get("status")
+        if status == "dry_run":
+            summary["dryRun"] += 1
+        elif status == "missing_input":
+            summary["missingInput"] += 1
+        elif status in {"success", "completed", "queued", "partial_success"}:
+            summary["success"] += 1
+        elif status == "http_error":
+            summary["httpError"] += 1
+        elif status == "error":
+            summary["error"] += 1
+        elif status == "failed":
+            summary["failed"] += 1
+    return summary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run real Beeclaw URL/account/keyword smoke checks through Radar API.")
     parser.add_argument("--base-url", default=os.getenv("RADAR_BASE_URL", "http://127.0.0.1:8780"))
@@ -171,6 +203,7 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="Actually call Radar API. Default is dry-run.")
     parser.add_argument("--fail-on-missing", action="store_true", help="Return non-zero if any selected case has no configured input.")
     parser.add_argument("--json", action="store_true", help="Emit full JSON report")
+    parser.add_argument("--report-file", default="", help="Write the full JSON report to this file for audit/history.")
     args = parser.parse_args()
 
     platforms = parse_csv(args.platforms, defaults=DEFAULT_PLATFORMS)
@@ -180,14 +213,26 @@ def main() -> int:
         run_case(args.base_url, case, execute=args.execute, queue=args.queue, limit=args.limit, backend=args.backend)
         for case in cases
     ]
-    payload = {"ok": True, "execute": args.execute, "base_url": args.base_url, "results": results}
+    payload = {
+        "ok": True,
+        "execute": args.execute,
+        "base_url": args.base_url,
+        "auth": {"apiTokenConfigured": bool(os.getenv("RADAR_API_TOKEN", "").strip()), "secretValuesExposed": False},
+        "summary": summarize_results(results),
+        "results": results,
+    }
     missing = [item for item in results if item["status"] == "missing_input"]
     failed = [item for item in results if item["status"] in {"error", "http_error", "failed"}]
     if missing and args.fail_on_missing:
         payload["ok"] = False
     if failed:
         payload["ok"] = False
-    print(json.dumps(payload, ensure_ascii=False, indent=2) if args.json else render_text(results))
+    payload_text = json.dumps(payload, ensure_ascii=False, indent=2)
+    if args.report_file:
+        report_path = Path(args.report_file)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(payload_text + "\n", encoding="utf-8")
+    print(payload_text if args.json else render_text(results))
     return 0 if payload["ok"] else 1
 
 

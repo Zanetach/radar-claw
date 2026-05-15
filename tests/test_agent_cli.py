@@ -1,4 +1,5 @@
 import io
+import importlib
 import json
 import os
 import stat
@@ -138,6 +139,33 @@ class BeeclawAgentCliTests(unittest.TestCase):
         self.assertEqual(payload["error"]["code"], "radar_api_unavailable")
         self.assertEqual(payload["error"]["fix"], "./tools/run_radar_api.sh")
 
+    def test_agent_cli_request_adds_radar_api_token_when_configured(self):
+        from crawler import agent_cli
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return None
+
+            def read(self):
+                return b'{"ok": true}'
+
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["authorization"] = request.get_header("Authorization")
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch.dict(os.environ, {"RADAR_API_TOKEN": "secret-radar-token"}, clear=False):
+            with patch.object(agent_cli.urllib.request, "urlopen", side_effect=fake_urlopen):
+                result = agent_cli._request("GET", "/api/summary")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(captured["authorization"], "Bearer secret-radar-token")
+
     def test_default_output_is_human_readable_summary(self):
         from crawler import agent_cli
 
@@ -201,6 +229,7 @@ class BeeclawAgentCliTests(unittest.TestCase):
         self.assertIn("BEECLAW_X_BROWSER_SESSION_MODE", text)
         self.assertIn("BEECLAW_X_BROWSER_ENDPOINT", text)
         self.assertIn("RADAR_BACKEND_MCP_MODE", text)
+        self.assertIn("RADAR_API_TOKEN", text)
 
     def test_package_json_exposes_npx_installer(self):
         package_json = Path("package.json")
@@ -210,6 +239,34 @@ class BeeclawAgentCliTests(unittest.TestCase):
         self.assertEqual(payload["bin"]["beeclaw-radar"], "tools/npx-install.mjs")
         self.assertIn("tools/npx-install.mjs", payload["files"])
         self.assertIn("crawler", payload["files"])
+
+    def test_smoke_script_writes_report_file_with_summary(self):
+        smoke = importlib.import_module("tools.beeclaw_platform_smoke")
+        with tempfile.TemporaryDirectory() as tmp:
+            report_file = Path(tmp) / "smoke.json"
+            with patch.object(
+                smoke.sys,
+                "argv",
+                [
+                    "beeclaw_platform_smoke.py",
+                    "--platforms",
+                    "web",
+                    "--types",
+                    "url",
+                    "--report-file",
+                    str(report_file),
+                    "--json",
+                ],
+            ):
+                with redirect_stdout(io.StringIO()):
+                    code = smoke.main()
+
+            payload = json.loads(report_file.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["summary"]["total"], 1)
+        self.assertEqual(payload["summary"]["dryRun"], 1)
+        self.assertEqual(payload["results"][0]["platform"], "web")
 
     def test_npx_installer_help_lists_actions(self):
         script = Path("tools/npx-install.mjs")

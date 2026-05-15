@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import hmac
 import shlex
 import shutil
 import sqlite3
@@ -83,6 +84,25 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict | 
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def configured_api_token() -> str:
+    return os.getenv("RADAR_API_TOKEN", "").strip()
+
+
+def request_api_token(handler: BaseHTTPRequestHandler) -> str:
+    header = handler.headers.get("Authorization", "").strip()
+    if header.lower().startswith("bearer "):
+        return header[7:].strip()
+    return handler.headers.get("X-Radar-API-Token", "").strip()
+
+
+def is_authorized_request(handler: BaseHTTPRequestHandler) -> bool:
+    expected = configured_api_token()
+    if not expected:
+        return True
+    provided = request_api_token(handler)
+    return bool(provided) and hmac.compare_digest(provided, expected)
 
 
 def parse_int(value: str | None, default: int | None = None) -> int | None:
@@ -1283,6 +1303,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path.startswith("/api/"):
+            if not self.require_api_auth():
+                return
             self.handle_api_get(parsed.path, parse_qs(parsed.query))
             return
         if parsed.path.startswith("/data/media/"):
@@ -1296,6 +1318,8 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path.startswith("/api/"):
+            if not self.require_api_auth():
+                return
             self.handle_api_post(parsed.path, parse_qs(parsed.query))
             return
         json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
@@ -1303,9 +1327,24 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
     def do_PATCH(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path.startswith("/api/"):
+            if not self.require_api_auth():
+                return
             self.handle_api_patch(parsed.path)
             return
         json_response(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
+
+    def require_api_auth(self) -> bool:
+        if is_authorized_request(self):
+            return True
+        json_response(
+            self,
+            HTTPStatus.UNAUTHORIZED,
+            {
+                "error": "unauthorized",
+                "message": "Radar API token required.",
+            },
+        )
+        return False
 
     def serve_root(self) -> None:
         json_response(
@@ -2149,6 +2188,12 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
         chrome_session = webbridge_status()
         return {
             "xmcp": xmcp,
+            "auth": {
+                "apiTokenConfigured": bool(configured_api_token()),
+                "requiredForApi": bool(configured_api_token()),
+                "acceptedHeaders": ["Authorization: Bearer <token>", "X-Radar-API-Token"],
+                "secretValuesExposed": False,
+            },
             "tokens": token_status,
             "credits": {
                 "status": "unknown",
@@ -2252,8 +2297,26 @@ class RadarAdminHandler(BaseHTTPRequestHandler):
             for name, status in backend_health.items()
             if isinstance(status, dict) and status.get("installed")
         )
+        api_token_configured = bool(configured_api_token())
 
         checks = [
+            {
+                "id": "api_service_auth",
+                "title": "Radar API 服务间鉴权",
+                "status": "implemented" if api_token_configured else "requires_api_token",
+                "projectSide": "implemented",
+                "externalDependency": "生产环境需要由平台 Secret 注入 RADAR_API_TOKEN，并让 Radar MCP / CLI 调用时携带 Bearer token。",
+                "evidence": {
+                    "apiTokenConfigured": api_token_configured,
+                    "acceptedHeaders": ["Authorization: Bearer <token>", "X-Radar-API-Token"],
+                    "secretValuesExposed": False,
+                },
+                "nextActions": [
+                    "在生产环境设置 RADAR_API_TOKEN。",
+                    "为 Hermes Radar MCP 进程注入同一个 Secret。",
+                    "用未带 token 的 /api/summary 请求确认返回 401，再用 Bearer token 验证通过。",
+                ],
+            },
             {
                 "id": "platform_mcp_gateway",
                 "title": "Platform MCP Gateway 统一调用 backend MCP",

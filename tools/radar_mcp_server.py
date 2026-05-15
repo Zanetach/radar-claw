@@ -38,6 +38,9 @@ def _request(method: str, path: str, payload: dict[str, Any] | None = None) -> d
     url = f"{RADAR_BASE_URL}{path}"
     body = None
     headers = {"Accept": "application/json"}
+    api_token = os.environ.get("RADAR_API_TOKEN", "").strip()
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
     if payload is not None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
