@@ -10,7 +10,7 @@
 ## 初始化飞书工作区
 
 ```bash
-python3 -m crawler.hermes_agents --workspace feishu_workspace init-feishu --excel 外网抓取账号0424.xlsx
+python3 -m crawler.hermes_agents --workspace feishu_workspace init-feishu --excel accounts.xlsx
 ```
 
 生成结构：

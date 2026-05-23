@@ -180,7 +180,6 @@ Agent-browser backend and real platform smoke testing are documented in [docs/Be
 - `tools/hermes_skills/` - Hermes skill definitions.
 - `docs/` - PRD, workflow, and setup documentation.
 - `tests/` - unit tests for backend, providers, MCP tools, and workflow behavior.
-- `接口文档/` - legacy Radar mobile app API documentation.
 
 ## Local Setup
 

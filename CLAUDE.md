@@ -30,8 +30,7 @@ Do not add or describe a standalone Radar user interface. Normal workflows must 
 - `tools/hermes_skills/` - Hermes skill definitions copied to `~/.hermes/skills`.
 - `docs/` - product, workflow, and deployment documentation.
 - `tests/` - unittest coverage for parsing, providers, database, MCP, web workflow, and feedgrab mapping.
-- `接口文档/` - legacy Radar mobile app API docs.
-- `外网抓取账号0424.xlsx` - source account spreadsheet used by import flows.
+- Source account spreadsheets are local import inputs and are ignored by git.
 
 ## Local Runtime
 

@@ -15,7 +15,7 @@ from .models import FetchResult
 
 
 DEFAULT_DB = Path("data/radar_sources.sqlite3")
-DEFAULT_EXCEL = Path("外网抓取账号0424.xlsx")
+DEFAULT_EXCEL = Path("accounts.xlsx")
 
 
 def filter_fetch_result(result: FetchResult, *, media_only: bool = False) -> FetchResult:

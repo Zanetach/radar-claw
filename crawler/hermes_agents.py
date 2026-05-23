@@ -15,7 +15,7 @@ from .providers import ProviderError, build_provider
 
 
 DEFAULT_WORKSPACE = Path("feishu_workspace")
-DEFAULT_EXCEL = Path("外网抓取账号0424.xlsx")
+DEFAULT_EXCEL = Path("accounts.xlsx")
 
 
 def now_iso() -> str:

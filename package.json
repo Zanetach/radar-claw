@@ -2,7 +2,7 @@
   "name": "beeclaw-radar",
   "version": "0.1.0",
   "description": "Radar/Beeclaw data-collection tool installer for Qianfeng AI / Hermes Agent workflows.",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "type": "module",
   "bin": {
@@ -19,8 +19,7 @@
     "tests",
     "tools",
     "tools/npx-install.mjs",
-    "接口文档",
-    "外网抓取账号0424.xlsx"
+    "LICENSE"
   ],
   "scripts": {
     "doctor": "node tools/npx-install.mjs doctor",
