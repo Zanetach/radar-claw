@@ -172,6 +172,7 @@ User
 
 Detailed product scope, collection flow, and architecture are documented in [docs/千蜂AI-Radar数据采集工具PRD.md](docs/千蜂AI-Radar数据采集工具PRD.md).
 Agent-browser backend and real platform smoke testing are documented in [docs/Beeclaw-agent-browser与真实平台测试.md](docs/Beeclaw-agent-browser与真实平台测试.md).
+Current capability review, capability descriptions, verification evidence, and remaining risks are documented in [docs/radar-capability-review.md](docs/radar-capability-review.md).
 
 ## Key Directories
 
