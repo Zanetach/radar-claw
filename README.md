@@ -1,6 +1,6 @@
 <div align="center">
   <h1>Radar Claw</h1>
-  <p><b>Data-collection tool layer for Qianfeng AI / Hermes Agent workflows.</b></p>
+  <p><b>Data-collection tool layer for Hermes Agent workflows.</b></p>
   <p><b>AI 员工背后的采集执行层：接收工具调用，调度 Beeclaw，保存原始内容，并返回可追踪执行结果。</b></p>
   <a href="package.json"><img src="https://img.shields.io/badge/version-0.1.0-111827?style=flat-square" alt="Version 0.1.0"></a>
   <a href="package.json"><img src="https://img.shields.io/badge/node-%3E%3D18-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node >=18"></a>
